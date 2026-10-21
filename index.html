@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="ko" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>바른성경 통합 뷰어 | 성경 · 주석 · 설교집</title>
+  
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&family=Noto+Serif+KR:wght@300;400;600;700&display=swap" rel="stylesheet">
+  
+  <!-- App Stylesheet -->
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📖</text></svg>">
+</head>
+<body class="font-serif">
+
+  <!-- Top App Header -->
+  <header class="app-header">
+    <div class="header-left">
+      <div class="brand-title" id="btn-home" title="처음으로 이동">
+        <span class="brand-icon">📖</span>
+        <span class="brand-name">바른성경 <span class="brand-sub">통합 뷰어</span></span>
+      </div>
+      
+      <!-- Book & Chapter Quick Selector -->
+      <div class="nav-control-group">
+        <button class="nav-btn book-picker-btn" id="btn-open-book-picker" aria-label="성경 책 선택">
+          <span id="current-book-name">창세기</span>
+          <span class="icon-caret">▾</span>
+        </button>
+
+        <div class="chapter-nav">
+          <button class="nav-icon-btn" id="btn-prev-chapter" title="이전 장 (단축키: [ 또는 ←)" aria-label="이전 장">‹</button>
+          <select id="select-chapter" class="nav-select" aria-label="장 선택"></select>
+          <button class="nav-icon-btn" id="btn-next-chapter" title="다음 장 (단축키: ] 또는 →)" aria-label="다음 장">›</button>
+        </div>
+
+        <select id="select-verse" class="nav-select verse-select" aria-label="절 바로가기">
+          <option value="">절 이동</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Center/Right Actions -->
+    <div class="header-right">
+      <!-- Search Trigger -->
+      <button class="header-btn search-trigger-btn" id="btn-open-search" title="통합 검색 (Ctrl+K)">
+        <span class="icon">🔍</span>
+        <span class="btn-text">검색</span>
+        <span class="kbd-badge">Ctrl+K</span>
+      </button>
+
+      <!-- Pane Layout Selector (Desktop) -->
+      <div class="pane-view-toggle desktop-only" id="pane-layout-controls">
+        <button class="pane-btn active" data-layout="all" title="3분할 전체 보기 (성경+주석+설교)">3단</button>
+        <button class="pane-btn" data-layout="bible-comm" title="2분할: 성경 + 주석">성경·주석</button>
+        <button class="pane-btn" data-layout="bible-sermon" title="2분할: 성경 + 설교">성경·설교</button>
+        <button class="pane-btn" data-layout="bible-only" title="1분할: 성경 전용">성경만</button>
+      </div>
+
+      <!-- Quick Font Sizer -->
+      <div class="font-size-group desktop-only">
+        <button class="font-size-btn" id="btn-font-smaller" title="글자 작게">A-</button>
+        <button class="font-size-btn" id="btn-font-larger" title="글자 크게">A+</button>
+      </div>
+
+      <!-- Theme Switcher -->
+      <div class="theme-dropdown">
+        <button class="header-icon-btn" id="btn-toggle-theme" title="화면 테마 변경">
+          <span id="theme-icon">☀️</span>
+        </button>
+      </div>
+
+      <!-- Settings / More -->
+      <button class="header-icon-btn" id="btn-open-settings" title="뷰어 환경설정">
+        <span class="icon">⚙️</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Multi-Pane Container -->
+  <main class="panes-container" id="panes-container">
+    
+    <!-- PANE 1: BIBLE (바른성경) -->
+    <section class="pane pane-bible" id="pane-bible" data-pane="bible">
+      <div class="pane-header">
+        <div class="pane-title-wrap">
+          <span class="pane-icon">📖</span>
+          <h2 class="pane-title" id="bible-pane-heading">바른성경</h2>
+        </div>
+        <div class="pane-header-actions">
+          <span class="badge badge-verse-count" id="bible-verse-count">31절</span>
+          <button class="pane-action-btn" id="btn-copy-bible-chapter" title="이 장 전체 복사">📋 복사</button>
+        </div>
+      </div>
+      <div class="pane-content custom-scrollbar" id="bible-content">
+        <!-- Bible verses injected here -->
+        <div class="loading-state">
+          <div class="spinner"></div>
+          <p>성경 본문을 불러오는 중...</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- PANE 2: COMMENTARY (목사님 강해집) -->
+    <section class="pane pane-commentary" id="pane-commentary" data-pane="commentary">
+      <div class="pane-header">
+        <div class="pane-title-wrap">
+          <span class="pane-icon">📑</span>
+          <h2 class="pane-title">목사님 주석 강해</h2>
+        </div>
+        <div class="pane-header-actions">
+          <button class="outline-toggle-btn" id="btn-toggle-outline" title="대지 요약 접기/펼치기">대지 보기</button>
+          <span class="badge" id="comm-item-count">0개</span>
+        </div>
+      </div>
+
+      <!-- Chapter Outline Banner -->
+      <div class="chapter-outline-banner" id="chapter-outline-banner" style="display: none;">
+        <div class="outline-theme-title" id="outline-theme-title"></div>
+        <ul class="outline-list" id="outline-list"></ul>
+      </div>
+
+      <div class="pane-content custom-scrollbar" id="commentary-content">
+        <!-- Commentary items injected here -->
+        <div class="empty-state">
+          <p>해당 장의 주석을 불러오는 중...</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- PANE 3: SERMONS (목사님 설교집 40권) -->
+    <section class="pane pane-sermon" id="pane-sermon" data-pane="sermon">
+      <div class="pane-header">
+        <div class="pane-title-wrap">
+          <span class="pane-icon">📜</span>
+          <h2 class="pane-title">목사님 설교집 (40권)</h2>
+        </div>
+        <div class="pane-header-actions">
+          <span class="badge badge-accent" id="sermon-count-badge">0편</span>
+          <select id="select-chapter-sermons" class="sermon-dropdown-select" title="이 장의 설교 선택">
+            <option value="">설교 선택...</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Sermons List / Viewer -->
+      <div class="pane-content custom-scrollbar" id="sermon-content">
+        <!-- Sermons injected here -->
+        <div class="empty-state">
+          <p>해당 장에 연결된 설교를 불러오는 중...</p>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Mobile Bottom Navigation Bar -->
+  <nav class="mobile-bottom-bar" id="mobile-bottom-bar">
+    <button class="mobile-tab-btn active" data-tab="bible">
+      <span class="mobile-tab-icon">📖</span>
+      <span class="mobile-tab-label">성경</span>
+    </button>
+    <button class="mobile-tab-btn" data-tab="commentary">
+      <span class="mobile-tab-icon">📑</span>
+      <span class="mobile-tab-label">주석</span>
+      <span class="mobile-badge" id="mobile-badge-comm">0</span>
+    </button>
+    <button class="mobile-tab-btn" data-tab="sermon">
+      <span class="mobile-tab-icon">📜</span>
+      <span class="mobile-tab-label">설교</span>
+      <span class="mobile-badge" id="mobile-badge-sermon">0</span>
+    </button>
+    <button class="mobile-tab-btn" id="mobile-btn-search">
+      <span class="mobile-tab-icon">🔍</span>
+      <span class="mobile-tab-label">검색</span>
+    </button>
+  </nav>
+
+  <!-- MODAL: Book Selector Modal -->
+  <div class="modal-overlay" id="modal-book-picker">
+    <div class="modal-card modal-book-card">
+      <div class="modal-header">
+        <h3 class="modal-title">성경 책 선택</h3>
+        <button class="modal-close-btn" id="btn-close-book-modal">&times;</button>
+      </div>
+
+      <!-- Quick Book Filter -->
+      <div class="book-modal-search">
+        <input type="text" id="input-book-filter" class="search-input" placeholder="책 이름 검색 (예: 마태, 창세, 롬)..." autocomplete="off">
+      </div>
+
+      <!-- Testament Tab Switches -->
+      <div class="testament-tabs">
+        <button class="testament-tab active" data-testament="ALL">전체 (66권)</button>
+        <button class="testament-tab" data-testament="OT">구약 (39권)</button>
+        <button class="testament-tab" data-testament="NT">신약 (27권)</button>
+      </div>
+
+      <!-- Category Filter Pills -->
+      <div class="category-pills" id="category-pills">
+        <!-- Rendered dynamically -->
+      </div>
+
+      <!-- Book Grid Container -->
+      <div class="book-grid custom-scrollbar" id="book-grid">
+        <!-- 66 Book buttons rendered dynamically -->
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Unified Full-Text Search Modal -->
+  <div class="modal-overlay" id="modal-search">
+    <div class="modal-card modal-search-card">
+      <div class="modal-header">
+        <div class="search-input-wrap">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="global-search-input" class="global-search-input" placeholder="검색어 입력 (성경 본문, 설교 제목, 주석 대지)..." autocomplete="off">
+          <button class="search-clear-btn" id="btn-search-clear" style="display:none;">&times;</button>
+        </div>
+        <button class="modal-close-btn" id="btn-close-search-modal">&times;</button>
+      </div>
+
+      <!-- Search Category Filter Tabs -->
+      <div class="search-filter-tabs">
+        <button class="search-tab active" data-search-filter="all">전체 <span class="search-count" id="count-all">0</span></button>
+        <button class="search-tab" data-search-filter="sermon">설교집 <span class="search-count" id="count-sermon">0</span></button>
+        <button class="search-tab" data-search-filter="commentary">주석·대지 <span class="search-count" id="count-comm">0</span></button>
+        <button class="search-tab" data-search-filter="bible">성경 본문 <span class="search-count" id="count-bible">0</span></button>
+      </div>
+
+      <!-- Search Results Area -->
+      <div class="search-results custom-scrollbar" id="search-results">
+        <div class="search-prompt-state">
+          <p>검색어를 2글자 이상 입력하세요.<br><small>설교 1,778편, 66권 강해 대지 및 성경 구절을 즉시 검색합니다.</small></p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Settings Modal -->
+  <div class="modal-overlay" id="modal-settings">
+    <div class="modal-card modal-settings-card">
+      <div class="modal-header">
+        <h3 class="modal-title">뷰어 환경설정</h3>
+        <button class="modal-close-btn" id="btn-close-settings-modal">&times;</button>
+      </div>
+      <div class="modal-body settings-body">
+        
+        <!-- Font Family -->
+        <div class="setting-item">
+          <label class="setting-label">글꼴 (폰트)</label>
+          <div class="setting-controls font-choice-group">
+            <button class="font-btn active" data-font="serif">명조 / 바탕체 (추천)</button>
+            <button class="font-btn" data-font="sans">고딕 / 산세리프</button>
+            <button class="font-btn" data-font="system">시스템 기본</button>
+          </div>
+        </div>
+
+        <!-- Font Size -->
+        <div class="setting-item">
+          <label class="setting-label">본문 글자 크기: <span id="label-font-size">18px</span></label>
+          <div class="setting-controls">
+            <input type="range" id="slider-font-size" min="14" max="26" step="1" value="18" class="setting-slider">
+          </div>
+        </div>
+
+        <!-- Line Spacing -->
+        <div class="setting-item">
+          <label class="setting-label">줄 간격: <span id="label-line-height">1.8</span></label>
+          <div class="setting-controls">
+            <input type="range" id="slider-line-height" min="1.4" max="2.3" step="0.1" value="1.8" class="setting-slider">
+          </div>
+        </div>
+
+        <!-- Theme Choice -->
+        <div class="setting-item">
+          <label class="setting-label">화면 테마</label>
+          <div class="setting-controls theme-choice-group">
+            <button class="theme-btn active" data-theme="light">☀️ 밝은 종이 (아이보리)</button>
+            <button class="theme-btn" data-theme="sepia">📜 고전 서적 (세피아)</button>
+            <button class="theme-btn" data-theme="dark">🌙 야간 모드 (다크)</button>
+          </div>
+        </div>
+
+        <!-- Keyboard Shortcuts Help -->
+        <div class="setting-item shortcuts-help">
+          <label class="setting-label">키보드 단축키 안내</label>
+          <ul class="shortcuts-list">
+            <li><kbd>←</kbd> / <kbd>[</kbd> : 이전 장으로 이동</li>
+            <li><kbd>→</kbd> / <kbd>]</kbd> : 다음 장으로 이동</li>
+            <li><kbd>Ctrl</kbd> + <kbd>K</kbd> : 통합 검색창 열기</li>
+            <li><kbd>1</kbd> / <kbd>2</kbd> / <kbd>3</kbd> : 화면 분할 전환</li>
+            <li><kbd>Esc</kbd> : 열린 창 닫기</li>
+          </ul>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <!-- App Main Scripts -->
+  <script src="js/app.js" type="module"></script>
+</body>
+</html>
