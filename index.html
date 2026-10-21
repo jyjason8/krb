@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>바른성경 통합 뷰어 | 성경 · 주석 · 설교집</title>
+  <title>바른성경 통합 뷰어 | 성경 · 강해서 · 설교집</title>
   
   <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -54,10 +54,10 @@
 
       <!-- Pane Layout Selector (Desktop) -->
       <div class="pane-view-toggle desktop-only" id="pane-layout-controls">
-        <button class="pane-btn active" data-layout="all" title="3분할 전체 보기 (성경+주석+설교)">3단</button>
-        <button class="pane-btn" data-layout="bible-comm" title="2분할: 성경 + 주석">성경·주석</button>
-        <button class="pane-btn" data-layout="bible-sermon" title="2분할: 성경 + 설교">성경·설교</button>
-        <button class="pane-btn" data-layout="bible-only" title="1분할: 성경 전용">성경만</button>
+        <button class="pane-btn active" data-layout="all" title="3단 전체 보기 (성경+강해서+설교)">3단</button>
+        <button class="pane-btn" data-layout="bible-comm" title="2단: 성경 + 강해서">성경·강해서</button>
+        <button class="pane-btn" data-layout="bible-sermon" title="2단: 성경 + 설교">성경·설교</button>
+        <button class="pane-btn" data-layout="bible-only" title="1단: 성경 전용">성경만</button>
       </div>
 
       <!-- Quick Font Sizer -->
@@ -104,12 +104,12 @@
       </div>
     </section>
 
-    <!-- PANE 2: COMMENTARY (목사님 강해집) -->
+    <!-- PANE 2: COMMENTARY (강해서) -->
     <section class="pane pane-commentary" id="pane-commentary" data-pane="commentary">
       <div class="pane-header">
         <div class="pane-title-wrap">
           <span class="pane-icon">📑</span>
-          <h2 class="pane-title">목사님 주석 강해</h2>
+          <h2 class="pane-title">강해서</h2>
         </div>
         <div class="pane-header-actions">
           <button class="outline-toggle-btn" id="btn-toggle-outline" title="대지 요약 접기/펼치기">대지 보기</button>
@@ -126,17 +126,17 @@
       <div class="pane-content custom-scrollbar" id="commentary-content">
         <!-- Commentary items injected here -->
         <div class="empty-state">
-          <p>해당 장의 주석을 불러오는 중...</p>
+          <p>해당 장의 강해서를 불러오는 중...</p>
         </div>
       </div>
     </section>
 
-    <!-- PANE 3: SERMONS (목사님 설교집 40권) -->
+    <!-- PANE 3: SERMONS (설교집) -->
     <section class="pane pane-sermon" id="pane-sermon" data-pane="sermon">
       <div class="pane-header">
         <div class="pane-title-wrap">
           <span class="pane-icon">📜</span>
-          <h2 class="pane-title">목사님 설교집 (40권)</h2>
+          <h2 class="pane-title">설교집</h2>
         </div>
         <div class="pane-header-actions">
           <span class="badge badge-accent" id="sermon-count-badge">0편</span>
@@ -165,7 +165,7 @@
     </button>
     <button class="mobile-tab-btn" data-tab="commentary">
       <span class="mobile-tab-icon">📑</span>
-      <span class="mobile-tab-label">주석</span>
+      <span class="mobile-tab-label">강해서</span>
       <span class="mobile-badge" id="mobile-badge-comm">0</span>
     </button>
     <button class="mobile-tab-btn" data-tab="sermon">
@@ -217,7 +217,7 @@
       <div class="modal-header">
         <div class="search-input-wrap">
           <span class="search-icon">🔍</span>
-          <input type="text" id="global-search-input" class="global-search-input" placeholder="검색어 입력 (성경 본문, 설교 제목, 주석 대지)..." autocomplete="off">
+          <input type="text" id="global-search-input" class="global-search-input" placeholder="검색어 입력 (성경 본문, 설교 제목, 강해서 대지)..." autocomplete="off">
           <button class="search-clear-btn" id="btn-search-clear" style="display:none;">&times;</button>
         </div>
         <button class="modal-close-btn" id="btn-close-search-modal">&times;</button>
@@ -227,7 +227,7 @@
       <div class="search-filter-tabs">
         <button class="search-tab active" data-search-filter="all">전체 <span class="search-count" id="count-all">0</span></button>
         <button class="search-tab" data-search-filter="sermon">설교집 <span class="search-count" id="count-sermon">0</span></button>
-        <button class="search-tab" data-search-filter="commentary">주석·대지 <span class="search-count" id="count-comm">0</span></button>
+        <button class="search-tab" data-search-filter="commentary">강해서·대지 <span class="search-count" id="count-comm">0</span></button>
         <button class="search-tab" data-search-filter="bible">성경 본문 <span class="search-count" id="count-bible">0</span></button>
       </div>
 

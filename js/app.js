@@ -30,6 +30,7 @@ class BibleApp {
       paneSermon: document.getElementById('pane-sermon'),
       bibleContent: document.getElementById('bible-content'),
       commContent: document.getElementById('commentary-content'),
+      commentaryContent: document.getElementById('commentary-content'),
       sermonContent: document.getElementById('sermon-content'),
 
       // Header Nav
@@ -270,7 +271,7 @@ class BibleApp {
       const hasSermon = chData.sermons.some(s => s.covered_verses && s.covered_verses.includes(v.verse));
 
       let indicators = '';
-      if (hasComm) indicators += `<span class="indicator-pill indicator-comm" title="목사님 주석 강해 있음">주석</span>`;
+      if (hasComm) indicators += `<span class="indicator-pill indicator-comm" title="목사님 강해서 있음">강해서</span>`;
       if (hasSermon) indicators += `<span class="indicator-pill indicator-sermon" title="목사님 설교 있음">설교</span>`;
 
       const isActive = this.selectedVerse === v.verse ? ' active' : '';
@@ -290,7 +291,7 @@ class BibleApp {
   renderCommentaryPane(bookData, chData) {
     // Chapter Theme Title & Outline Banner
     if (chData.title || (chData.outline && chData.outline.length > 0)) {
-      this.dom.outlineThemeTitle.textContent = chData.title ? `제 ${this.currentChapter} 장 주제: ${chData.title}` : `제 ${this.currentChapter} 장 강해`;
+      this.dom.outlineThemeTitle.textContent = chData.title ? `제 ${this.currentChapter} 장 주제: ${chData.title}` : `제 ${this.currentChapter} 장 강해서`;
       this.dom.outlineList.innerHTML = (chData.outline || []).map(o => `<li class="outline-item">${this.escapeHtml(o)}</li>`).join('');
       this.dom.btnToggleOutline.style.display = 'inline-block';
     } else {
@@ -299,9 +300,9 @@ class BibleApp {
     }
 
     if (!chData.commentaries || chData.commentaries.length === 0) {
-      this.dom.commentaryContent.innerHTML = `
+      this.dom.commContent.innerHTML = `
         <div class="empty-state">
-          <p>${bookData.name} ${this.currentChapter}장의 기록된 주석 강해가 없습니다.</p>
+          <p>${bookData.name} ${this.currentChapter}장의 기록된 강해서가 없습니다.</p>
         </div>`;
       return;
     }
@@ -325,7 +326,7 @@ class BibleApp {
       `;
     });
 
-    this.dom.commentaryContent.innerHTML = html;
+    this.dom.commContent.innerHTML = html;
   }
 
   renderSermonsPane(bookData, chData) {
@@ -658,7 +659,7 @@ class BibleApp {
       const isSermon = item.type === 'sermon';
       const isBible = item.type === 'bible';
       const badgeClass = isSermon ? 'result-type-sermon' : (isBible ? 'result-type-bible' : 'result-type-comm');
-      const badgeLabel = isSermon ? `설교 (${item.volume}권)` : (isBible ? '성경 이동' : '주석 대지');
+      const badgeLabel = isSermon ? `설교 (${item.volume}권)` : (isBible ? '성경 이동' : '강해서 대지');
 
       html += `
         <div class="search-result-item" 
