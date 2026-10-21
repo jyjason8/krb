@@ -536,6 +536,7 @@ body.font-system {
   font-size: 1em;
   color: var(--text-main);
   word-break: keep-all;
+  overflow-wrap: anywhere;
 }
 
 .verse-indicators {
@@ -665,6 +666,7 @@ body.font-system {
   color: var(--text-main);
   line-height: var(--line-height-base);
   word-break: keep-all;
+  overflow-wrap: anywhere;
 }
 
 .comm-body p {
@@ -747,6 +749,7 @@ body.font-system {
   color: var(--text-main);
   line-height: var(--line-height-base);
   word-break: keep-all;
+  overflow-wrap: anywhere;
 }
 
 .sermon-body h2 {
@@ -1279,7 +1282,7 @@ body.font-system {
   }
 
   .pane-content {
-    padding: 16px 14px 40px 14px;
+    padding: 16px 14px calc(var(--mobile-bar-height) + env(safe-area-inset-bottom, 0px) + 60px) 14px !important;
   }
 }
 
