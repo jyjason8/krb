@@ -217,7 +217,7 @@
       <div class="modal-header">
         <div class="search-input-wrap">
           <span class="search-icon">🔍</span>
-          <input type="text" id="global-search-input" class="global-search-input" placeholder="검색어 입력 (성경 본문, 설교 제목, 강해서 대지)..." autocomplete="off">
+          <input type="text" id="global-search-input" class="global-search-input" placeholder="검색어 입력 (성경 구절, 강해서 해설, 설교집 본문)..." autocomplete="off">
           <button class="search-clear-btn" id="btn-search-clear" style="display:none;">&times;</button>
         </div>
         <button class="modal-close-btn" id="btn-close-search-modal">&times;</button>
@@ -226,15 +226,15 @@
       <!-- Search Category Filter Tabs -->
       <div class="search-filter-tabs">
         <button class="search-tab active" data-search-filter="all">전체 <span class="search-count" id="count-all">0</span></button>
+        <button class="search-tab" data-search-filter="bible">성경 <span class="search-count" id="count-bible">0</span></button>
+        <button class="search-tab" data-search-filter="commentary">강해서 <span class="search-count" id="count-comm">0</span></button>
         <button class="search-tab" data-search-filter="sermon">설교집 <span class="search-count" id="count-sermon">0</span></button>
-        <button class="search-tab" data-search-filter="commentary">강해서·대지 <span class="search-count" id="count-comm">0</span></button>
-        <button class="search-tab" data-search-filter="bible">성경 본문 <span class="search-count" id="count-bible">0</span></button>
       </div>
 
       <!-- Search Results Area -->
       <div class="search-results custom-scrollbar" id="search-results">
         <div class="search-prompt-state">
-          <p>검색어를 2글자 이상 입력하세요.<br><small>설교 1,778편, 66권 강해 대지 및 성경 구절을 즉시 검색합니다.</small></p>
+          <p>검색어를 2글자 이상 입력하세요.<br><small>성경 66권, 강해서 해설 전권, 설교 1,778편 전체 본문을 검색합니다.</small></p>
         </div>
       </div>
     </div>

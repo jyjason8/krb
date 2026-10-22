@@ -7,8 +7,10 @@ class BibleApp {
   constructor() {
     this.booksSummary = [];
     this.cachedBooks = new Map();
-    this.searchIndex = null;
-    this.searchIndexLoading = false;
+    this.searchBible = null;
+    this.searchComm = null;
+    this.searchSermons = null;
+    this.searchLoading = { bible: false, comm: false, sermon: false };
 
     // State
     this.currentBookId = 1;      // Default: 1 (창세기)
@@ -565,31 +567,64 @@ class BibleApp {
   }
 
   // ============================================================
-  // GLOBAL SEARCH ENGINE
+  // GLOBAL SEARCH ENGINE (FULL-TEXT BIBLE, COMMENTARY & SERMONS)
   // ============================================================
-  async preloadSearchIndex() {
-    if (this.searchIndex || this.searchIndexLoading) return;
-    this.searchIndexLoading = true;
+  async loadSearchBible() {
+    if (this.searchBible || this.searchLoading.bible) return this.searchBible;
+    this.searchLoading.bible = true;
     try {
-      const res = await fetch('data/search_index.json');
-      this.searchIndex = await res.json();
+      const res = await fetch('data/search_bible.json');
+      this.searchBible = await res.json();
     } catch (e) {
-      console.warn('Failed to preload search index', e);
+      console.warn('Failed to load search_bible.json', e);
     } finally {
-      this.searchIndexLoading = false;
+      this.searchLoading.bible = false;
     }
+    return this.searchBible;
+  }
+
+  async loadSearchComm() {
+    if (this.searchComm || this.searchLoading.comm) return this.searchComm;
+    this.searchLoading.comm = true;
+    try {
+      const res = await fetch('data/search_commentary.json');
+      this.searchComm = await res.json();
+    } catch (e) {
+      console.warn('Failed to load search_commentary.json', e);
+    } finally {
+      this.searchLoading.comm = false;
+    }
+    return this.searchComm;
+  }
+
+  async loadSearchSermons() {
+    if (this.searchSermons || this.searchLoading.sermon) return this.searchSermons;
+    this.searchLoading.sermon = true;
+    try {
+      const res = await fetch('data/search_sermons.json');
+      this.searchSermons = await res.json();
+    } catch (e) {
+      console.warn('Failed to load search_sermons.json', e);
+    } finally {
+      this.searchLoading.sermon = false;
+    }
+    return this.searchSermons;
+  }
+
+  async preloadSearchIndex() {
+    // Progressively warm up search datasets
+    this.loadSearchBible().then(() => {
+      this.loadSearchComm().then(() => {
+        this.loadSearchSermons();
+      });
+    });
   }
 
   async performSearch(query, filter = 'all') {
-    if (!this.searchIndex) {
-      this.dom.searchResults.innerHTML = `<div class="loading-state"><div class="spinner"></div><p>검색 인덱스를 불러오는 중...</p></div>`;
-      await this.preloadSearchIndex();
-    }
-
     if (!query || query.trim().length < 2) {
       this.dom.searchResults.innerHTML = `
         <div class="search-prompt-state">
-          <p>검색어를 2글자 이상 입력하세요.<br><small>설교 1,778편, 66권 강해 대지 및 성경 구절을 즉시 검색합니다.</small></p>
+          <p>검색어를 2글자 이상 입력하세요.<br><small>성경 66권, 강해서 해설 전권, 설교 1,778편 전체 본문을 검색합니다.</small></p>
         </div>`;
       this.updateSearchCounts(0, 0, 0, 0);
       return;
@@ -597,7 +632,7 @@ class BibleApp {
 
     const q = query.trim().toLowerCase();
 
-    // Direct Scripture coordinate matching: e.g. "마태 5" or "창 1:1"
+    // 1. Direct Scripture coordinate matching: e.g. "마태 5" or "창 1:1"
     const coordMatch = q.match(/^([가-힣]+)\s*(\d+)(?:[:장]\s*(\d+))?/);
     let directResults = [];
     if (coordMatch) {
@@ -618,35 +653,103 @@ class BibleApp {
       }
     }
 
-    // Filter index
-    let matchedSermons = [];
-    let matchedComm = [];
+    // Check loading state and trigger fetches
+    if (!this.searchBible && !this.searchLoading.bible) this.loadSearchBible();
+    if (!this.searchComm && !this.searchLoading.comm) this.loadSearchComm();
+    if (!this.searchSermons && !this.searchLoading.sermon) this.loadSearchSermons();
 
-    for (const item of this.searchIndex) {
-      const titleMatch = item.title && item.title.toLowerCase().includes(q);
-      const contentMatch = (item.content || item.preview || '').toLowerCase().includes(q);
+    // Wait for the requested dataset
+    if (filter === 'bible' && !this.searchBible) {
+      this.dom.searchResults.innerHTML = `<div class="loading-state"><div class="spinner"></div><p>성경 본문 검색 데이터를 불러오는 중...</p></div>`;
+      await this.loadSearchBible();
+    } else if (filter === 'commentary' && !this.searchComm) {
+      this.dom.searchResults.innerHTML = `<div class="loading-state"><div class="spinner"></div><p>강해서 전체 본문 검색 데이터를 불러오는 중...</p></div>`;
+      await this.loadSearchComm();
+    } else if (filter === 'sermon' && !this.searchSermons) {
+      this.dom.searchResults.innerHTML = `<div class="loading-state"><div class="spinner"></div><p>설교집 전체 본문 검색 데이터를 불러오는 중...</p></div>`;
+      await this.loadSearchSermons();
+    } else if (filter === 'all' && !this.searchBible && !this.searchComm && !this.searchSermons) {
+      this.dom.searchResults.innerHTML = `<div class="loading-state"><div class="spinner"></div><p>전체 검색 데이터를 불러오는 중...</p></div>`;
+      await Promise.all([this.loadSearchBible(), this.loadSearchComm(), this.loadSearchSermons()]);
+    }
 
-      if (titleMatch || contentMatch) {
-        if (item.type === 'sermon') {
-          matchedSermons.push(item);
-        } else {
-          matchedComm.push(item);
+    // 2. Search Bible (searchBible: [b_id, b_name, ch, v, text])
+    let matchedBible = [...directResults];
+    if (this.searchBible) {
+      for (const item of this.searchBible) {
+        if (item[4].toLowerCase().includes(q)) {
+          matchedBible.push({
+            type: 'bible',
+            book_id: item[0],
+            book: item[1],
+            chapter: item[2],
+            verse: item[3],
+            title: `${item[1]} ${item[2]}:${item[3]}`,
+            preview: this.getSnippet(item[4], q)
+          });
+          if (matchedBible.length >= 100) break;
         }
       }
     }
 
-    const totalCount = directResults.length + matchedSermons.length + matchedComm.length;
-    this.updateSearchCounts(totalCount, matchedSermons.length, matchedComm.length, directResults.length);
+    // 3. Search Commentary (searchComm: [b_id, b_name, ch, v_str, heading, text])
+    let matchedComm = [];
+    if (this.searchComm) {
+      for (const item of this.searchComm) {
+        const headingMatch = item[4] && item[4].toLowerCase().includes(q);
+        const textMatch = item[5] && item[5].toLowerCase().includes(q);
+        if (headingMatch || textMatch) {
+          const vDisplay = item[3] ? `${item[3]}절` : '';
+          const title = `${item[1]} ${item[2]}장 ${vDisplay} ${item[4] ? `(${item[4]})` : ''}`.trim();
+          matchedComm.push({
+            type: 'commentary',
+            book_id: item[0],
+            book: item[1],
+            chapter: item[2],
+            verse: item[3] && !isNaN(parseInt(item[3], 10)) ? parseInt(item[3], 10) : null,
+            title: title,
+            preview: this.getSnippet(item[5], q)
+          });
+          if (matchedComm.length >= 100) break;
+        }
+      }
+    }
+
+    // 4. Search Sermons (searchSermons: [b_id, b_name, ch, vol, s_id, title, range_disp, text])
+    let matchedSermons = [];
+    if (this.searchSermons) {
+      for (const item of this.searchSermons) {
+        const titleMatch = item[5] && item[5].toLowerCase().includes(q);
+        const rangeMatch = item[6] && item[6].toLowerCase().includes(q);
+        const textMatch = item[7] && item[7].toLowerCase().includes(q);
+        if (titleMatch || rangeMatch || textMatch) {
+          matchedSermons.push({
+            type: 'sermon',
+            book_id: item[0],
+            book: item[1],
+            chapter: item[2],
+            volume: item[3],
+            sermon_id: item[4],
+            title: `[${item[3]}권] ${item[5]} (${item[6]})`,
+            preview: this.getSnippet(item[7], q)
+          });
+          if (matchedSermons.length >= 100) break;
+        }
+      }
+    }
+
+    const totalCount = matchedBible.length + matchedComm.length + matchedSermons.length;
+    this.updateSearchCounts(totalCount, matchedBible.length, matchedComm.length, matchedSermons.length);
 
     let displayResults = [];
     if (filter === 'all') {
-      displayResults = [...directResults, ...matchedSermons.slice(0, 40), ...matchedComm.slice(0, 40)];
-    } else if (filter === 'sermon') {
-      displayResults = matchedSermons.slice(0, 60);
-    } else if (filter === 'commentary') {
-      displayResults = matchedComm.slice(0, 60);
+      displayResults = [...matchedBible.slice(0, 30), ...matchedComm.slice(0, 30), ...matchedSermons.slice(0, 30)];
     } else if (filter === 'bible') {
-      displayResults = directResults;
+      displayResults = matchedBible;
+    } else if (filter === 'commentary') {
+      displayResults = matchedComm;
+    } else if (filter === 'sermon') {
+      displayResults = matchedSermons;
     }
 
     if (displayResults.length === 0) {
@@ -656,10 +759,11 @@ class BibleApp {
 
     let html = '';
     displayResults.forEach(item => {
-      const isSermon = item.type === 'sermon';
       const isBible = item.type === 'bible';
-      const badgeClass = isSermon ? 'result-type-sermon' : (isBible ? 'result-type-bible' : 'result-type-comm');
-      const badgeLabel = isSermon ? `설교 (${item.volume}권)` : (isBible ? '성경 이동' : '강해서 대지');
+      const isComm = item.type === 'commentary';
+
+      const badgeClass = isBible ? 'result-type-bible' : (isComm ? 'result-type-comm' : 'result-type-sermon');
+      const badgeLabel = isBible ? '성경' : (isComm ? '강해서' : '설교집');
 
       html += `
         <div class="search-result-item" 
@@ -670,12 +774,24 @@ class BibleApp {
             <span class="result-title">${this.highlightKeyword(item.title, q)}</span>
             <span class="result-type-badge ${badgeClass}">${badgeLabel}</span>
           </div>
-          <div class="result-snippet">${this.highlightKeyword(item.preview || item.content || '', q)}</div>
+          <div class="result-snippet">${this.highlightKeyword(item.preview, q)}</div>
         </div>
       `;
     });
 
     this.dom.searchResults.innerHTML = html;
+  }
+
+  getSnippet(text, keyword, maxLen = 160) {
+    if (!text) return '';
+    const idx = text.toLowerCase().indexOf(keyword.toLowerCase());
+    if (idx === -1) return text.substring(0, maxLen);
+    const start = Math.max(0, idx - 40);
+    const end = Math.min(text.length, idx + keyword.length + 100);
+    let snippet = text.substring(start, end).trim();
+    if (start > 0) snippet = '...' + snippet;
+    if (end < text.length) snippet = snippet + '...';
+    return snippet;
   }
 
   highlightKeyword(text, keyword) {
@@ -685,11 +801,15 @@ class BibleApp {
     return escaped.replace(regex, '<mark>$1</mark>');
   }
 
-  updateSearchCounts(all, sermon, comm, bible) {
-    document.getElementById('count-all').textContent = all;
-    document.getElementById('count-sermon').textContent = sermon;
-    document.getElementById('count-comm').textContent = comm;
-    document.getElementById('count-bible').textContent = bible;
+  updateSearchCounts(all, bible, comm, sermon) {
+    const elAll = document.getElementById('count-all');
+    const elBible = document.getElementById('count-bible');
+    const elComm = document.getElementById('count-comm');
+    const elSermon = document.getElementById('count-sermon');
+    if (elAll) elAll.textContent = all;
+    if (elBible) elBible.textContent = bible;
+    if (elComm) elComm.textContent = comm;
+    if (elSermon) elSermon.textContent = sermon;
   }
 
   // ============================================================
