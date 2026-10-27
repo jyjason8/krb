@@ -86,7 +86,7 @@
     "category": "역사서",
     "total_chapters": 21,
     "total_verses": 618,
-    "total_commentaries": 248,
+    "total_commentaries": 261,
     "total_sermons": 24,
     "file": "07_사사기.json"
   },
@@ -190,7 +190,7 @@
     "category": "역사서",
     "total_chapters": 10,
     "total_verses": 280,
-    "total_commentaries": 83,
+    "total_commentaries": 90,
     "total_sermons": 15,
     "file": "15_에스라.json"
   },
@@ -242,7 +242,7 @@
     "category": "시가서",
     "total_chapters": 150,
     "total_verses": 2460,
-    "total_commentaries": 1616,
+    "total_commentaries": 1631,
     "total_sermons": 156,
     "file": "19_시편.json"
   },
@@ -255,7 +255,7 @@
     "category": "시가서",
     "total_chapters": 31,
     "total_verses": 915,
-    "total_commentaries": 680,
+    "total_commentaries": 704,
     "total_sermons": 41,
     "file": "20_잠언.json"
   },
@@ -411,7 +411,7 @@
     "category": "소선지서",
     "total_chapters": 4,
     "total_verses": 48,
-    "total_commentaries": 28,
+    "total_commentaries": 37,
     "total_sermons": 4,
     "file": "32_요나.json"
   },
@@ -502,7 +502,7 @@
     "category": "소선지서",
     "total_chapters": 4,
     "total_verses": 55,
-    "total_commentaries": 29,
+    "total_commentaries": 42,
     "total_sermons": 9,
     "file": "39_말라기.json"
   },
@@ -541,7 +541,7 @@
     "category": "사복음서",
     "total_chapters": 24,
     "total_verses": 1151,
-    "total_commentaries": 765,
+    "total_commentaries": 785,
     "total_sermons": 80,
     "file": "42_누가복음.json"
   },
@@ -554,7 +554,7 @@
     "category": "사복음서",
     "total_chapters": 21,
     "total_verses": 879,
-    "total_commentaries": 697,
+    "total_commentaries": 742,
     "total_sermons": 44,
     "file": "43_요한복음.json"
   },
@@ -632,7 +632,7 @@
     "category": "바울서신",
     "total_chapters": 6,
     "total_verses": 155,
-    "total_commentaries": 128,
+    "total_commentaries": 151,
     "total_sermons": 19,
     "file": "49_에베소서.json"
   },
@@ -788,7 +788,7 @@
     "category": "일반서신",
     "total_chapters": 3,
     "total_verses": 61,
-    "total_commentaries": 21,
+    "total_commentaries": 57,
     "total_sermons": 7,
     "file": "61_베드로후서.json"
   },

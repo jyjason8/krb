@@ -52,16 +52,15 @@
         <span class="kbd-badge">Ctrl+K</span>
       </button>
 
-      <!-- Pane Layout Selector (Desktop) -->
-      <div class="pane-view-toggle desktop-only" id="pane-layout-controls">
-        <button class="pane-btn active" data-layout="all" title="3단 전체 보기 (성경+강해서+설교)">3단</button>
-        <button class="pane-btn" data-layout="bible-comm" title="2단: 성경 + 강해서">성경·강해서</button>
-        <button class="pane-btn" data-layout="bible-sermon" title="2단: 성경 + 설교">성경·설교</button>
-        <button class="pane-btn" data-layout="bible-only" title="1단: 성경 전용">성경만</button>
+      <!-- 3-Pill Pane Selector -->
+      <div class="pane-toggle-group" id="pane-toggle-group" title="화면 선택">
+        <button class="pane-toggle-pill active" data-pane="bible" title="성경 보기 켜기/끄기">성경</button>
+        <button class="pane-toggle-pill" data-pane="commentary" title="강해서 보기 켜기/끄기">강해서</button>
+        <button class="pane-toggle-pill" data-pane="sermon" title="설교집 보기 켜기/끄기">설교집</button>
       </div>
 
       <!-- Quick Font Sizer -->
-      <div class="font-size-group desktop-only">
+      <div class="font-size-group" id="font-size-group">
         <button class="font-size-btn" id="btn-font-smaller" title="글자 작게">A-</button>
         <button class="font-size-btn" id="btn-font-larger" title="글자 크게">A+</button>
       </div>

@@ -16,7 +16,7 @@ class BibleApp {
     this.currentBookId = 1;      // Default: 1 (창세기)
     this.currentChapter = 1;     // Default: 1장
     this.selectedVerse = null;
-    this.layoutMode = 'all';     // 'all' | 'bible-comm' | 'bible-sermon' | 'bible-only'
+    this.activePanes = new Set(['bible']); // 'bible' | 'commentary' | 'sermon'
     this.mobileActiveTab = 'bible';
     this.activeTheme = 'light';
     this.activeFont = 'serif';
@@ -54,8 +54,8 @@ class BibleApp {
       outlineThemeTitle: document.getElementById('outline-theme-title'),
       outlineList: document.getElementById('outline-list'),
 
-      // Layout & Sizers
-      paneLayoutControls: document.getElementById('pane-layout-controls'),
+      // 3-Pill Pane Selector & Sizers
+      paneToggleGroup: document.getElementById('pane-toggle-group'),
       btnFontSmaller: document.getElementById('btn-font-smaller'),
       btnFontLarger: document.getElementById('btn-font-larger'),
       btnToggleTheme: document.getElementById('btn-toggle-theme'),
@@ -130,8 +130,22 @@ class BibleApp {
       this.setLineHeight(parseFloat(savedLineHeight));
     }
 
-    const savedLayout = localStorage.getItem('bible_layout') || 'all';
-    this.setLayoutMode(savedLayout);
+    // Active Panes (Default for first-time visitors: only 'bible')
+    const savedPanes = localStorage.getItem('bible_active_panes');
+    if (savedPanes) {
+      try {
+        const parsed = JSON.parse(savedPanes);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          this.activePanes = new Set(parsed);
+        }
+      } catch (e) {
+        console.warn('Error reading saved panes', e);
+      }
+    }
+    if (!this.activePanes || this.activePanes.size === 0) {
+      this.activePanes = new Set(['bible']);
+    }
+    this.applyActivePanes();
   }
 
   parseUrlHash() {
@@ -386,7 +400,7 @@ class BibleApp {
     const verseEl = document.getElementById(`verse-${verseNum}`);
     if (verseEl) {
       verseEl.classList.add('active');
-      if (scroll) {
+      if (scroll && this.activePanes.has('bible')) {
         verseEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       }
     }
@@ -404,7 +418,7 @@ class BibleApp {
       }
     });
 
-    if (firstMatchingComm && scroll) {
+    if (firstMatchingComm && scroll && this.activePanes.has('commentary')) {
       firstMatchingComm.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
@@ -421,16 +435,30 @@ class BibleApp {
       }
     });
 
-    if (firstMatchingSermon && scroll) {
+    if (firstMatchingSermon && scroll && this.activePanes.has('sermon')) {
       firstMatchingSermon.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
     // 4. Update dropdown
-    if (this.dom.selectVerse.value !== String(verseNum)) {
+    if (this.dom.selectVerse && this.dom.selectVerse.value !== String(verseNum)) {
       this.dom.selectVerse.value = verseNum;
     }
 
     // 5. Update URL
+    this.updateUrlHash();
+  }
+
+  clearVerseSelection() {
+    this.selectedVerse = null;
+    const prevActive = this.dom.bibleContent.querySelector('.verse-item.active');
+    if (prevActive) prevActive.classList.remove('active');
+
+    this.dom.commContent.querySelectorAll('.comm-card.highlighted').forEach(c => c.classList.remove('highlighted'));
+    this.dom.sermonContent.querySelectorAll('.sermon-article.highlighted').forEach(c => c.classList.remove('highlighted'));
+
+    if (this.dom.selectVerse) {
+      this.dom.selectVerse.value = '';
+    }
     this.updateUrlHash();
   }
 
@@ -870,24 +898,63 @@ class BibleApp {
     localStorage.setItem('bible_line_height', val);
   }
 
-  setLayoutMode(layout) {
-    this.layoutMode = layout;
-    this.dom.panesContainer.setAttribute('data-layout', layout);
-    localStorage.setItem('bible_layout', layout);
+  togglePane(paneName) {
+    if (this.activePanes.has(paneName)) {
+      if (this.activePanes.size <= 1) {
+        this.showToast('최소 한 개의 화면은 선택되어 있어야 합니다.');
+        return;
+      }
+      this.activePanes.delete(paneName);
+    } else {
+      this.activePanes.add(paneName);
+    }
+    this.applyActivePanes();
+    localStorage.setItem('bible_active_panes', JSON.stringify([...this.activePanes]));
+  }
 
-    document.querySelectorAll('.pane-btn').forEach(btn => {
-      btn.classList.toggle('active', btn.dataset.layout === layout);
+  applyActivePanes() {
+    // 1. Update header toggle pills
+    const pills = document.querySelectorAll('.pane-toggle-pill');
+    pills.forEach(pill => {
+      const pane = pill.dataset.pane;
+      pill.classList.toggle('active', this.activePanes.has(pane));
     });
+
+    // 2. Update pane visibility
+    const isBible = this.activePanes.has('bible');
+    const isComm = this.activePanes.has('commentary');
+    const isSermon = this.activePanes.has('sermon');
+
+    if (this.dom.paneBible) this.dom.paneBible.style.display = isBible ? 'flex' : 'none';
+    if (this.dom.paneComm) this.dom.paneComm.style.display = isComm ? 'flex' : 'none';
+    if (this.dom.paneSermon) this.dom.paneSermon.style.display = isSermon ? 'flex' : 'none';
+
+    // 3. Synchronize mobile bottom tabs
+    if (this.dom.mobileBottomBar) {
+      this.dom.mobileBottomBar.querySelectorAll('.mobile-tab-btn[data-tab]').forEach(btn => {
+        const tab = btn.dataset.tab;
+        btn.classList.toggle('active', this.activePanes.has(tab));
+      });
+    }
+  }
+
+  setLayoutMode(layout) {
+    // Backward compatibility mapping
+    if (layout === 'all') {
+      this.activePanes = new Set(['bible', 'commentary', 'sermon']);
+    } else if (layout === 'bible-comm') {
+      this.activePanes = new Set(['bible', 'commentary']);
+    } else if (layout === 'bible-sermon') {
+      this.activePanes = new Set(['bible', 'sermon']);
+    } else if (layout === 'bible-only') {
+      this.activePanes = new Set(['bible']);
+    }
+    this.applyActivePanes();
+    localStorage.setItem('bible_active_panes', JSON.stringify([...this.activePanes]));
   }
 
   setMobileTab(tab) {
-    this.mobileActiveTab = tab;
-    this.dom.panesContainer.classList.remove('mobile-show-bible', 'mobile-show-commentary', 'mobile-show-sermon');
-    this.dom.panesContainer.classList.add(`mobile-show-${tab}`);
-
-    document.querySelectorAll('.mobile-tab-btn').forEach(btn => {
-      btn.classList.toggle('active', btn.dataset.tab === tab);
-    });
+    this.togglePane(tab);
   }
 
   showToast(msg) {
@@ -918,12 +985,48 @@ class BibleApp {
     this.dom.btnPrevChapter.addEventListener('click', () => this.prevChapter());
     this.dom.btnNextChapter.addEventListener('click', () => this.nextChapter());
 
-    // 2. Click verse in Bible Pane
+    // 2. Click verse in Bible Pane (toggle selection)
     this.dom.bibleContent.addEventListener('click', (e) => {
       const verseItem = e.target.closest('.verse-item');
       if (verseItem) {
         const v = parseInt(verseItem.dataset.verse, 10);
-        this.selectVerse(v, false);
+        if (this.selectedVerse === v) {
+          this.clearVerseSelection();
+        } else {
+          this.selectVerse(v, true);
+        }
+      }
+    });
+
+    // Click commentary card to select/toggle verse
+    this.dom.commContent.addEventListener('click', (e) => {
+      const card = e.target.closest('.comm-card');
+      if (card) {
+        const covered = (card.getAttribute('data-covered-verses') || '').split(',').map(Number).filter(Boolean);
+        if (covered.length > 0) {
+          const firstV = covered[0];
+          if (this.selectedVerse === firstV) {
+            this.clearVerseSelection();
+          } else {
+            this.selectVerse(firstV, true);
+          }
+        }
+      }
+    });
+
+    // Click sermon article to select/toggle verse
+    this.dom.sermonContent.addEventListener('click', (e) => {
+      const card = e.target.closest('.sermon-article');
+      if (card) {
+        const covered = (card.getAttribute('data-covered-verses') || '').split(',').map(Number).filter(Boolean);
+        if (covered.length > 0) {
+          const firstV = covered[0];
+          if (this.selectedVerse === firstV) {
+            this.clearVerseSelection();
+          } else {
+            this.selectVerse(firstV, true);
+          }
+        }
       }
     });
 
@@ -964,11 +1067,15 @@ class BibleApp {
       });
     });
 
-    // 6. Pane Layout Buttons
-    this.dom.paneLayoutControls.addEventListener('click', (e) => {
-      const btn = e.target.closest('.pane-btn');
-      if (btn) this.setLayoutMode(btn.dataset.layout);
-    });
+    // 6. 3-Pill Pane Selector Group
+    if (this.dom.paneToggleGroup) {
+      this.dom.paneToggleGroup.addEventListener('click', (e) => {
+        const pill = e.target.closest('.pane-toggle-pill');
+        if (pill && pill.dataset.pane) {
+          this.togglePane(pill.dataset.pane);
+        }
+      });
+    }
 
     // 7. Font Sizing Buttons
     this.dom.btnFontSmaller.addEventListener('click', () => {
@@ -1124,11 +1231,11 @@ class BibleApp {
       } else if (e.key === 'ArrowRight' || e.key === ']') {
         this.nextChapter();
       } else if (e.key === '1') {
-        this.setLayoutMode('all');
+        this.togglePane('bible');
       } else if (e.key === '2') {
-        this.setLayoutMode('bible-comm');
+        this.togglePane('commentary');
       } else if (e.key === '3') {
-        this.setLayoutMode('bible-sermon');
+        this.togglePane('sermon');
       } else if (e.key === 'Escape') {
         this.closeAllModals();
       }
