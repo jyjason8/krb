@@ -11,7 +11,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&family=Noto+Serif+KR:wght@300;400;600;700&display=swap" rel="stylesheet">
   
   <!-- App Stylesheet -->
-  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/style.css?v=20261110">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📖</text></svg>">
 </head>
 <body class="font-serif">
@@ -65,6 +65,13 @@
         <button class="font-size-btn" id="btn-font-larger" title="글자 크게">A+</button>
       </div>
 
+      <!-- Top Header Quick TTS Control -->
+      <div class="tts-control-group tts-top-control" id="tts-ctrl-top" data-tts-pane="top">
+        <button class="tts-btn tts-btn-play" data-action="toggle" title="현재 화면 음성으로 듣기">🔊</button>
+        <button class="tts-btn tts-btn-stop" data-action="stop" title="듣기 정지" style="display:none;">⏹</button>
+        <button class="tts-btn tts-btn-rate" data-action="rate" title="읽기 배속 변경 (클릭 시 전환)" style="display:none;">1.0x</button>
+      </div>
+
       <!-- Theme Switcher -->
       <div class="theme-dropdown">
         <button class="header-icon-btn" id="btn-toggle-theme" title="화면 테마 변경">
@@ -90,6 +97,11 @@
           <h2 class="pane-title" id="bible-pane-heading">바른성경</h2>
         </div>
         <div class="pane-header-actions">
+          <div class="tts-control-group" id="tts-ctrl-bible" data-tts-pane="bible">
+            <button class="tts-btn tts-btn-play" data-action="toggle" title="성경 본문 음성으로 듣기">🔊</button>
+            <button class="tts-btn tts-btn-stop" data-action="stop" title="듣기 정지" style="display:none;">⏹</button>
+            <button class="tts-btn tts-btn-rate" data-action="rate" title="읽기 배속 변경 (클릭 시 전환)" style="display:none;">1.0x</button>
+          </div>
           <span class="badge badge-verse-count" id="bible-verse-count">31절</span>
           <button class="pane-action-btn" id="btn-copy-bible-chapter" title="이 장 전체 복사">📋 복사</button>
         </div>
@@ -111,6 +123,11 @@
           <h2 class="pane-title">강해서</h2>
         </div>
         <div class="pane-header-actions">
+          <div class="tts-control-group" id="tts-ctrl-commentary" data-tts-pane="commentary">
+            <button class="tts-btn tts-btn-play" data-action="toggle" title="강해서 음성으로 듣기">🔊</button>
+            <button class="tts-btn tts-btn-stop" data-action="stop" title="듣기 정지" style="display:none;">⏹</button>
+            <button class="tts-btn tts-btn-rate" data-action="rate" title="읽기 배속 변경 (클릭 시 전환)" style="display:none;">1.0x</button>
+          </div>
           <button class="outline-toggle-btn" id="btn-toggle-outline" title="대지 요약 접기/펼치기">대지 보기</button>
           <span class="badge" id="comm-item-count">0개</span>
         </div>
@@ -138,6 +155,11 @@
           <h2 class="pane-title">설교집</h2>
         </div>
         <div class="pane-header-actions">
+          <div class="tts-control-group" id="tts-ctrl-sermon" data-tts-pane="sermon">
+            <button class="tts-btn tts-btn-play" data-action="toggle" title="설교집 음성으로 듣기">🔊</button>
+            <button class="tts-btn tts-btn-stop" data-action="stop" title="듣기 정지" style="display:none;">⏹</button>
+            <button class="tts-btn tts-btn-rate" data-action="rate" title="읽기 배속 변경 (클릭 시 전환)" style="display:none;">1.0x</button>
+          </div>
           <span class="badge badge-accent" id="sermon-count-badge">0편</span>
           <select id="select-chapter-sermons" class="sermon-dropdown-select" title="이 장의 설교 선택">
             <option value="">설교 선택...</option>
@@ -304,6 +326,6 @@
   <div class="toast-container" id="toast-container"></div>
 
   <!-- App Main Scripts -->
-  <script src="js/app.js" type="module"></script>
+  <script src="js/app.js?v=20261110" type="module"></script>
 </body>
 </html>

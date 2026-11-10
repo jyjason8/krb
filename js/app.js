@@ -23,6 +23,18 @@ class BibleApp {
     this.fontSize = 18;
     this.lineHeight = 1.8;
 
+    // TTS (Text-to-Speech) State
+    this.ttsRates = [1.0, 1.2, 1.5, 0.8];
+    this.ttsRate = 1.0;
+    this.ttsPane = null;          // 'bible' | 'commentary' | 'sermon' | null
+    this.ttsState = 'idle';       // 'idle' | 'playing' | 'paused'
+    this.ttsUnits = [];           // Array of { el: HTMLElement, chunks: string[], verseNum?: number }
+    this.ttsUnitIndex = 0;
+    this.ttsChunkIndex = 0;
+    this.ttsSessionId = 0;
+    this.ttsVoice = null;
+    this.selectedTtsUnitEl = { commentary: null, sermon: null };
+
     // DOM Elements
     this.dom = {
       // Containers
@@ -97,6 +109,7 @@ class BibleApp {
   }
 
   async init() {
+    this.initTtsEngine();
     this.loadSavedPreferences();
     this.bindEvents();
     
@@ -128,6 +141,12 @@ class BibleApp {
     const savedLineHeight = localStorage.getItem('bible_line_height');
     if (savedLineHeight) {
       this.setLineHeight(parseFloat(savedLineHeight));
+    }
+
+    const savedTtsRate = localStorage.getItem('bible_tts_rate');
+    if (savedTtsRate && !isNaN(parseFloat(savedTtsRate))) {
+      this.ttsRate = parseFloat(savedTtsRate);
+      this.updateTtsControlUI();
     }
 
     // Active Panes (Default for first-time visitors: only 'bible')
@@ -234,6 +253,8 @@ class BibleApp {
   }
 
   renderChapter(bookData, chapterNum) {
+    this.stopTts();
+    this.selectedTtsUnitEl = { commentary: null, sermon: null };
     this.currentChapter = chapterNum;
     const chStr = String(chapterNum);
     const chData = bookData.chapters[chStr] || { bible: [], commentaries: [], sermons: [], title: '', outline: [] };
@@ -296,7 +317,10 @@ class BibleApp {
         <div class="verse-item${isActive}" id="verse-${v.verse}" data-verse="${v.verse}">
           <span class="verse-num">${v.verse}</span>
           <span class="verse-text">${this.escapeHtml(v.text)}</span>
-          <div class="verse-indicators">${indicators}</div>
+          <div class="verse-indicators">
+            ${indicators}
+            <button class="tts-inline-btn" data-tts-verse="${v.verse}" title="${v.verse}절부터 음성으로 듣기">🔊</button>
+          </div>
         </div>
       `;
     });
@@ -327,14 +351,18 @@ class BibleApp {
     chData.commentaries.forEach((comm, idx) => {
       const covStr = (comm.covered_verses || []).join(',');
       const isHighlighted = this.selectedVerse && comm.covered_verses && comm.covered_verses.includes(this.selectedVerse) ? ' highlighted' : '';
+      const headerSpoken = `${comm.verse}절 강해. ${comm.heading || ''}`.trim();
 
       html += `
         <article class="comm-card${isHighlighted}" id="comm-card-${idx}" data-covered-verses="${covStr}">
-          <div class="comm-card-header">
+          <div class="comm-card-header tts-unit" data-tts-text="${this.escapeHtml(headerSpoken)}">
             <span class="comm-verse-tag">📌 ${this.escapeHtml(comm.verse)}절</span>
-            ${comm.heading ? `<span class="comm-outline-heading">${this.escapeHtml(comm.heading)}</span>` : ''}
+            <div class="comm-header-right">
+              ${comm.heading ? `<span class="comm-outline-heading">${this.escapeHtml(comm.heading)}</span>` : ''}
+              <button class="tts-inline-btn" data-tts-start-card="comm-card-${idx}" title="이 강해서부터 듣기">🔊</button>
+            </div>
           </div>
-          ${comm.verse_text ? `<div class="comm-verse-scripture">${this.escapeHtml(comm.verse_text)}</div>` : ''}
+          ${comm.verse_text ? `<div class="comm-verse-scripture tts-unit">${this.escapeHtml(comm.verse_text)}<button class="tts-para-btn" title="이 구절부터 듣기">🔊 여기서부터</button></div>` : ''}
           <div class="comm-body">
             ${this.formatCommentaryBody(comm.commentary)}
           </div>
@@ -377,8 +405,9 @@ class BibleApp {
             <div class="sermon-meta-row">
               <span class="badge-vol">${s.volume}권</span>
               <span class="badge-range">${this.escapeHtml(s.range_display || '')}</span>
+              <button class="tts-inline-btn" data-tts-start-card="sermon-article-${idx}" title="이 설교 처음부터 듣기" style="margin-left:auto;">🔊 설교 듣기</button>
             </div>
-            <h1 class="sermon-main-title">${this.escapeHtml(s.title)}</h1>
+            <h1 class="sermon-main-title tts-unit">${this.escapeHtml(s.title)}<button class="tts-para-btn" title="이 설교 제목부터 듣기">🔊 여기서부터</button></h1>
           </header>
           <div class="sermon-body">
             ${this.renderMarkdown(s.content)}
@@ -390,7 +419,7 @@ class BibleApp {
     this.dom.sermonContent.innerHTML = html;
   }
 
-  selectVerse(verseNum, scroll = true) {
+  selectVerse(verseNum, scroll = true, scrollSource = null) {
     this.selectedVerse = verseNum;
 
     // 1. Highlight verse item in Bible Pane
@@ -400,7 +429,7 @@ class BibleApp {
     const verseEl = document.getElementById(`verse-${verseNum}`);
     if (verseEl) {
       verseEl.classList.add('active');
-      if (scroll && this.activePanes.has('bible')) {
+      if (scroll && scrollSource !== 'bible' && this.activePanes.has('bible')) {
         verseEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       }
     }
@@ -418,7 +447,7 @@ class BibleApp {
       }
     });
 
-    if (firstMatchingComm && scroll && this.activePanes.has('commentary')) {
+    if (firstMatchingComm && scroll && scrollSource !== 'commentary' && this.activePanes.has('commentary')) {
       firstMatchingComm.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
@@ -435,7 +464,7 @@ class BibleApp {
       }
     });
 
-    if (firstMatchingSermon && scroll && this.activePanes.has('sermon')) {
+    if (firstMatchingSermon && scroll && scrollSource !== 'sermon' && this.activePanes.has('sermon')) {
       firstMatchingSermon.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
@@ -506,11 +535,11 @@ class BibleApp {
     let text = md.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 
     // Headers ## and ###
-    text = text.replace(/^### (.*$)/gim, '<h3>$1</h3>');
-    text = text.replace(/^## (.*$)/gim, '<h2>$1</h2>');
+    text = text.replace(/^### (.*$)/gim, '<h3 class="tts-unit">$1<button class="tts-para-btn" title="이 소제목부터 듣기">🔊 여기서부터</button></h3>');
+    text = text.replace(/^## (.*$)/gim, '<h2 class="tts-unit">$1<button class="tts-para-btn" title="이 대지부터 듣기">🔊 여기서부터</button></h2>');
 
     // Blockquotes >
-    text = text.replace(/^\> (.*$)/gim, '<blockquote><p>$1</p></blockquote>');
+    text = text.replace(/^\> (.*$)/gim, '<blockquote class="tts-unit"><p>$1</p><button class="tts-para-btn" title="이 인용문부터 듣기">🔊 여기서부터</button></blockquote>');
 
     // Bold **text**
     text = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
@@ -520,10 +549,10 @@ class BibleApp {
     const rendered = paras.map(p => {
       p = p.trim();
       if (!p) return '';
-      if (p.startsWith('<h2>') || p.startsWith('<h3>') || p.startsWith('<blockquote>')) {
+      if (p.startsWith('<h2') || p.startsWith('<h3') || p.startsWith('<blockquote')) {
         return p;
       }
-      return `<p>${p.replace(/\n/g, '<br>')}</p>`;
+      return `<p class="tts-unit">${p.replace(/\n/g, '<br>')}<button class="tts-para-btn" title="이 문단부터 듣기">🔊 여기서부터</button></p>`;
     }).join('\n');
 
     return rendered;
@@ -535,7 +564,7 @@ class BibleApp {
     return paras.map(p => {
       p = p.trim();
       if (!p) return '';
-      return `<p>${this.escapeHtml(p)}</p>`;
+      return `<p class="tts-unit">${this.escapeHtml(p)}<button class="tts-para-btn" title="이 문단부터 듣기">🔊 여기서부터</button></p>`;
     }).join('');
   }
 
@@ -904,6 +933,9 @@ class BibleApp {
         this.showToast('최소 한 개의 화면은 선택되어 있어야 합니다.');
         return;
       }
+      if (this.ttsPane === paneName) {
+        this.stopTts();
+      }
       this.activePanes.delete(paneName);
     } else {
       this.activePanes.add(paneName);
@@ -968,9 +1000,387 @@ class BibleApp {
   }
 
   // ============================================================
+  // TTS (TEXT-TO-SPEECH) ENGINE
+  // ============================================================
+  initTtsEngine() {
+    if (!('speechSynthesis' in window)) return;
+    this.selectBestKoreanVoice();
+    if (window.speechSynthesis.onvoiceschanged !== undefined) {
+      window.speechSynthesis.onvoiceschanged = () => this.selectBestKoreanVoice();
+    }
+    window.addEventListener('beforeunload', () => {
+      window.speechSynthesis.cancel();
+    });
+  }
+
+  selectBestKoreanVoice() {
+    if (!('speechSynthesis' in window)) return;
+    const voices = window.speechSynthesis.getVoices() || [];
+    const koVoices = voices.filter(v => {
+      const lang = (v.lang || '').toLowerCase();
+      return lang.startsWith('ko') || lang.includes('kr');
+    });
+    if (koVoices.length === 0) return;
+
+    const scoreVoice = (v) => {
+      const name = (v.name || '').toLowerCase();
+      let score = 0;
+      if (name.includes('natural') || name.includes('online')) score += 100;
+      if (name.includes('sunhi') || name.includes('injoon') || name.includes('hyunsu')) score += 50;
+      if (name.includes('google')) score += 60;
+      if (name.includes('yuna') || name.includes('sora') || name.includes('samsung')) score += 40;
+      if (v.default) score += 20;
+      if (v.localService) score += 10;
+      return score;
+    };
+
+    koVoices.sort((a, b) => scoreVoice(b) - scoreVoice(a));
+    this.ttsVoice = koVoices[0];
+  }
+
+  cleanTextForTts(raw) {
+    if (!raw) return '';
+    return raw
+      .replace(/[📌🔊📋👉☀️📜🌙⚙️🔍📖📑]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  splitIntoSentenceChunks(text, maxLen = 170) {
+    const cleaned = this.cleanTextForTts(text);
+    if (!cleaned) return [];
+    if (cleaned.length <= maxLen) return [cleaned];
+
+    const parts = cleaned.split(/(?<=[.?!다요죠음함임])\s+/);
+    const chunks = [];
+    let current = '';
+
+    for (const part of parts) {
+      if (!part) continue;
+      if ((current + ' ' + part).trim().length <= maxLen) {
+        current = (current + ' ' + part).trim();
+      } else {
+        if (current) chunks.push(current);
+        if (part.length <= maxLen) {
+          current = part;
+        } else {
+          // Hard split very long single clauses by comma or length
+          const subParts = part.split(/(?<=,)\s*/);
+          let subCurrent = '';
+          for (const sp of subParts) {
+            if ((subCurrent + ' ' + sp).trim().length <= maxLen) {
+              subCurrent = (subCurrent + ' ' + sp).trim();
+            } else {
+              if (subCurrent) chunks.push(subCurrent);
+              subCurrent = sp;
+            }
+          }
+          current = subCurrent;
+        }
+      }
+    }
+    if (current) chunks.push(current);
+    return chunks.length > 0 ? chunks : [cleaned];
+  }
+
+  buildTtsQueue(paneName) {
+    const units = [];
+    if (paneName === 'bible') {
+      const items = this.dom.bibleContent.querySelectorAll('.verse-item');
+      items.forEach(item => {
+        const textEl = item.querySelector('.verse-text');
+        const raw = textEl ? textEl.textContent : '';
+        const chunks = this.splitIntoSentenceChunks(raw);
+        if (chunks.length > 0) {
+          units.push({
+            el: item,
+            chunks,
+            verseNum: parseInt(item.dataset.verse, 10)
+          });
+        }
+      });
+    } else {
+      const container = paneName === 'commentary' ? this.dom.commContent : this.dom.sermonContent;
+      const els = container.querySelectorAll('.tts-unit');
+      els.forEach(el => {
+        let raw = '';
+        if (el.dataset.ttsText) {
+          raw = el.dataset.ttsText;
+        } else {
+          const clone = el.cloneNode(true);
+          clone.querySelectorAll('.tts-para-btn, .tts-inline-btn').forEach(b => b.remove());
+          raw = clone.textContent || '';
+        }
+        const chunks = this.splitIntoSentenceChunks(raw);
+        if (chunks.length > 0) {
+          units.push({ el, chunks });
+        }
+      });
+    }
+    return units;
+  }
+
+  startTts(paneName, startEl = null) {
+    if (!('speechSynthesis' in window)) {
+      this.showToast('이 브라우저는 음성 읽기(TTS) 기능을 지원하지 않습니다.');
+      return;
+    }
+
+    this.stopTts();
+
+    const units = this.buildTtsQueue(paneName);
+    if (units.length === 0) {
+      this.showToast('읽을 수 있는 본문이 없습니다.');
+      return;
+    }
+
+    let startIndex = 0;
+    if (startEl) {
+      const foundIdx = units.findIndex(u => u.el === startEl || startEl.contains(u.el) || u.el.contains(startEl));
+      if (foundIdx !== -1) startIndex = foundIdx;
+    } else if (paneName === 'bible' && this.selectedVerse) {
+      const foundIdx = units.findIndex(u => u.verseNum === this.selectedVerse);
+      if (foundIdx !== -1) startIndex = foundIdx;
+    } else if (paneName === 'commentary' || paneName === 'sermon') {
+      const selEl = this.selectedTtsUnitEl[paneName];
+      if (selEl && document.body.contains(selEl)) {
+        const foundIdx = units.findIndex(u => u.el === selEl);
+        if (foundIdx !== -1) startIndex = foundIdx;
+      } else {
+        const container = paneName === 'commentary' ? this.dom.commContent : this.dom.sermonContent;
+        const highlightedCard = container.querySelector('.comm-card.highlighted, .sermon-article.highlighted');
+        if (highlightedCard) {
+          const foundIdx = units.findIndex(u => highlightedCard.contains(u.el));
+          if (foundIdx !== -1) startIndex = foundIdx;
+        }
+      }
+    }
+
+    this.ttsPane = paneName;
+    this.ttsUnits = units;
+    this.ttsUnitIndex = startIndex;
+    this.ttsChunkIndex = 0;
+    this.ttsState = 'playing';
+
+    this.updateTtsControlUI();
+    this.speakCurrentChunk();
+  }
+
+  speakCurrentChunk() {
+    if (this.ttsState !== 'playing' || !this.ttsPane) return;
+
+    if (this.ttsUnitIndex >= this.ttsUnits.length) {
+      this.stopTts();
+      this.showToast('음성 읽기가 완료되었습니다.');
+      return;
+    }
+
+    const unit = this.ttsUnits[this.ttsUnitIndex];
+    if (!unit || !unit.el || !document.body.contains(unit.el)) {
+      this.stopTts();
+      return;
+    }
+
+    // Highlight current DOM unit & scroll smoothly if needed
+    document.querySelectorAll('.tts-reading').forEach(el => {
+      if (el !== unit.el) el.classList.remove('tts-reading');
+    });
+    unit.el.classList.add('tts-reading');
+
+    if (this.ttsChunkIndex === 0) {
+      this.scrollTtsUnitIntoView(unit.el);
+      if (this.ttsPane === 'bible' && unit.verseNum) {
+        this.selectVerse(unit.verseNum, true, 'bible');
+      }
+    }
+
+    const chunkText = unit.chunks[this.ttsChunkIndex];
+    if (!chunkText) {
+      this.ttsUnitIndex++;
+      this.ttsChunkIndex = 0;
+      this.speakCurrentChunk();
+      return;
+    }
+
+    this.ttsSessionId++;
+    const sessionId = this.ttsSessionId;
+
+    window.speechSynthesis.cancel();
+
+    const utter = new SpeechSynthesisUtterance(chunkText);
+    utter.lang = 'ko-KR';
+    utter.rate = this.ttsRate;
+    utter.pitch = 1.0;
+
+    if (!this.ttsVoice) {
+      this.selectBestKoreanVoice();
+    }
+    if (this.ttsVoice) {
+      utter.voice = this.ttsVoice;
+    }
+
+    const advanceNext = () => {
+      if (sessionId !== this.ttsSessionId || this.ttsState !== 'playing') return;
+      this.ttsChunkIndex++;
+      if (this.ttsChunkIndex >= unit.chunks.length) {
+        this.ttsUnitIndex++;
+        this.ttsChunkIndex = 0;
+      }
+      this.speakCurrentChunk();
+    };
+
+    utter.onend = advanceNext;
+    utter.onerror = (e) => {
+      if (sessionId !== this.ttsSessionId || this.ttsState !== 'playing') return;
+      if (e.error === 'canceled' || e.error === 'interrupted') return;
+      advanceNext();
+    };
+
+    window.speechSynthesis.speak(utter);
+  }
+
+  scrollTtsUnitIntoView(el) {
+    const paneContent = el.closest('.pane-content');
+    if (!paneContent) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      return;
+    }
+    const paneRect = paneContent.getBoundingClientRect();
+    const elRect = el.getBoundingClientRect();
+    const topMargin = 40;
+    const bottomMargin = 90;
+
+    if (elRect.top < paneRect.top + topMargin || elRect.bottom > paneRect.bottom - bottomMargin) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }
+
+  pauseTts() {
+    if (this.ttsState !== 'playing') return;
+    this.ttsSessionId++;
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    this.ttsState = 'paused';
+    this.updateTtsControlUI();
+  }
+
+  resumeTts() {
+    if (this.ttsState !== 'paused' || !this.ttsPane) return;
+    this.ttsState = 'playing';
+    this.updateTtsControlUI();
+    this.speakCurrentChunk();
+  }
+
+  stopTts() {
+    this.ttsSessionId++;
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    this.ttsState = 'idle';
+    this.ttsPane = null;
+    this.ttsUnits = [];
+    this.ttsUnitIndex = 0;
+    this.ttsChunkIndex = 0;
+
+    document.querySelectorAll('.tts-reading').forEach(el => el.classList.remove('tts-reading'));
+    this.updateTtsControlUI();
+  }
+
+  cycleTtsRate() {
+    const idx = this.ttsRates.indexOf(this.ttsRate);
+    this.ttsRate = this.ttsRates[(idx + 1) % this.ttsRates.length];
+    localStorage.setItem('bible_tts_rate', this.ttsRate);
+    this.updateTtsControlUI();
+
+    if (this.ttsState === 'playing') {
+      this.speakCurrentChunk();
+    }
+  }
+
+  updateTtsControlUI() {
+    const groups = document.querySelectorAll('.tts-control-group');
+    const rateLabel = `${this.ttsRate.toFixed(1)}x`;
+
+    groups.forEach(group => {
+      const pane = group.dataset.ttsPane;
+      const btnPlay = group.querySelector('.tts-btn-play');
+      const btnStop = group.querySelector('.tts-btn-stop');
+      const btnRate = group.querySelector('.tts-btn-rate');
+
+      if (btnRate) btnRate.textContent = rateLabel;
+
+      const isActivePane = (this.ttsState !== 'idle') && (this.ttsPane === pane || pane === 'top');
+      group.classList.toggle('active', isActivePane);
+
+      if (isActivePane) {
+        if (this.ttsState === 'playing') {
+          btnPlay.textContent = '⏸';
+          btnPlay.title = '일시정지';
+        } else {
+          btnPlay.textContent = '▶';
+          btnPlay.title = '이어서 듣기';
+        }
+        if (btnStop) btnStop.style.display = 'inline-flex';
+        if (btnRate) btnRate.style.display = 'inline-flex';
+      } else {
+        btnPlay.textContent = '🔊';
+        btnPlay.title = '음성으로 듣기 (선택한 위치 또는 처음부터)';
+        if (btnStop) btnStop.style.display = 'none';
+        if (btnRate) btnRate.style.display = 'none';
+      }
+    });
+  }
+
+  getDefaultTtsPane() {
+    if (this.activePanes.has('bible')) return 'bible';
+    if (this.activePanes.has('commentary')) return 'commentary';
+    if (this.activePanes.has('sermon')) return 'sermon';
+    return 'bible';
+  }
+
+  selectTtsUnitInPane(paneName, unitEl) {
+    const container = paneName === 'commentary' ? this.dom.commContent : this.dom.sermonContent;
+    const prev = this.selectedTtsUnitEl[paneName];
+    if (prev && prev === unitEl) {
+      prev.classList.remove('tts-selected-unit');
+      this.selectedTtsUnitEl[paneName] = null;
+      return;
+    }
+    container.querySelectorAll('.tts-selected-unit').forEach(el => el.classList.remove('tts-selected-unit'));
+    unitEl.classList.add('tts-selected-unit');
+    this.selectedTtsUnitEl[paneName] = unitEl;
+  }
+
+  // ============================================================
   // EVENT BINDINGS
   // ============================================================
   bindEvents() {
+    // 0. Pane Header TTS Control Group clicks
+    document.querySelectorAll('.tts-control-group').forEach(group => {
+      group.addEventListener('click', (e) => {
+        const btn = e.target.closest('.tts-btn');
+        if (!btn) return;
+        const rawPane = group.dataset.ttsPane;
+        const pane = rawPane === 'top' ? (this.ttsPane || this.getDefaultTtsPane()) : rawPane;
+        const action = btn.dataset.action;
+
+        if (action === 'toggle') {
+          if (this.ttsPane === pane && this.ttsState === 'playing') {
+            this.pauseTts();
+          } else if (this.ttsPane === pane && this.ttsState === 'paused') {
+            this.resumeTts();
+          } else {
+            this.startTts(pane);
+          }
+        } else if (action === 'stop') {
+          this.stopTts();
+        } else if (action === 'rate') {
+          this.cycleTtsRate();
+        }
+      });
+    });
+
     // 1. Navigation events
     this.dom.selectChapter.addEventListener('change', (e) => {
       this.loadBook(this.currentBookId, parseInt(e.target.value, 10), null);
@@ -985,46 +1395,119 @@ class BibleApp {
     this.dom.btnPrevChapter.addEventListener('click', () => this.prevChapter());
     this.dom.btnNextChapter.addEventListener('click', () => this.nextChapter());
 
-    // 2. Click verse in Bible Pane (toggle selection)
+    // 2. Click verse or inline TTS button in Bible Pane
     this.dom.bibleContent.addEventListener('click', (e) => {
+      const ttsBtn = e.target.closest('.tts-inline-btn[data-tts-verse]');
+      if (ttsBtn) {
+        e.stopPropagation();
+        const v = parseInt(ttsBtn.dataset.ttsVerse, 10);
+        const verseItem = document.getElementById(`verse-${v}`);
+        this.selectVerse(v, true, 'bible');
+        this.startTts('bible', verseItem);
+        return;
+      }
+
       const verseItem = e.target.closest('.verse-item');
       if (verseItem) {
         const v = parseInt(verseItem.dataset.verse, 10);
+        // If TTS is currently active in Bible pane, clicking any verse jumps playback there
+        if (this.ttsPane === 'bible' && this.ttsState !== 'idle') {
+          this.selectVerse(v, true, 'bible');
+          this.startTts('bible', verseItem);
+          return;
+        }
+
         if (this.selectedVerse === v) {
           this.clearVerseSelection();
         } else {
-          this.selectVerse(v, true);
+          this.selectVerse(v, true, 'bible');
         }
       }
     });
 
-    // Click commentary card to select/toggle verse
+    // Click commentary card / paragraph / inline TTS button
     this.dom.commContent.addEventListener('click', (e) => {
+      const cardStartBtn = e.target.closest('.tts-inline-btn[data-tts-start-card]');
+      if (cardStartBtn) {
+        e.stopPropagation();
+        const cardEl = document.getElementById(cardStartBtn.dataset.ttsStartCard);
+        if (cardEl) this.startTts('commentary', cardEl);
+        return;
+      }
+
+      const paraBtn = e.target.closest('.tts-para-btn');
+      if (paraBtn) {
+        e.stopPropagation();
+        const unitEl = paraBtn.closest('.tts-unit');
+        if (unitEl) {
+          this.selectTtsUnitInPane('commentary', unitEl);
+          this.startTts('commentary', unitEl);
+        }
+        return;
+      }
+
+      const unitEl = e.target.closest('.tts-unit');
+      if (unitEl) {
+        if (this.ttsPane === 'commentary' && this.ttsState !== 'idle') {
+          this.startTts('commentary', unitEl);
+          return;
+        }
+        this.selectTtsUnitInPane('commentary', unitEl);
+      }
+
       const card = e.target.closest('.comm-card');
       if (card) {
         const covered = (card.getAttribute('data-covered-verses') || '').split(',').map(Number).filter(Boolean);
         if (covered.length > 0) {
           const firstV = covered[0];
-          if (this.selectedVerse === firstV) {
+          if (this.selectedVerse === firstV && !unitEl) {
             this.clearVerseSelection();
-          } else {
-            this.selectVerse(firstV, true);
+          } else if (this.selectedVerse !== firstV) {
+            this.selectVerse(firstV, true, 'commentary');
           }
         }
       }
     });
 
-    // Click sermon article to select/toggle verse
+    // Click sermon article / paragraph / inline TTS button
     this.dom.sermonContent.addEventListener('click', (e) => {
+      const cardStartBtn = e.target.closest('.tts-inline-btn[data-tts-start-card]');
+      if (cardStartBtn) {
+        e.stopPropagation();
+        const cardEl = document.getElementById(cardStartBtn.dataset.ttsStartCard);
+        if (cardEl) this.startTts('sermon', cardEl);
+        return;
+      }
+
+      const paraBtn = e.target.closest('.tts-para-btn');
+      if (paraBtn) {
+        e.stopPropagation();
+        const unitEl = paraBtn.closest('.tts-unit');
+        if (unitEl) {
+          this.selectTtsUnitInPane('sermon', unitEl);
+          this.startTts('sermon', unitEl);
+        }
+        return;
+      }
+
+      const unitEl = e.target.closest('.tts-unit');
+      if (unitEl) {
+        if (this.ttsPane === 'sermon' && this.ttsState !== 'idle') {
+          this.startTts('sermon', unitEl);
+          return;
+        }
+        this.selectTtsUnitInPane('sermon', unitEl);
+      }
+
       const card = e.target.closest('.sermon-article');
       if (card) {
         const covered = (card.getAttribute('data-covered-verses') || '').split(',').map(Number).filter(Boolean);
         if (covered.length > 0) {
           const firstV = covered[0];
-          if (this.selectedVerse === firstV) {
+          if (this.selectedVerse === firstV && !unitEl) {
             this.clearVerseSelection();
-          } else {
-            this.selectVerse(firstV, true);
+          } else if (this.selectedVerse !== firstV) {
+            this.selectVerse(firstV, true, 'sermon');
           }
         }
       }
