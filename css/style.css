@@ -540,14 +540,26 @@ body.font-system {
   color: #ffffff;
 }
 
+.tts-btn-rate-step {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 700;
+  padding: 2px 5px;
+  min-width: 20px;
+  color: var(--color-primary);
+  border-left: 1px solid var(--border-medium);
+  border-radius: 0;
+}
+
 .tts-btn-rate {
   font-family: var(--font-sans);
   font-variant-numeric: tabular-nums;
   font-size: 11px;
-  padding: 2px 5px;
+  padding: 2px 4px;
+  min-width: 30px;
   color: var(--color-primary);
-  border-left: 1px solid var(--border-medium);
-  border-radius: 0 4px 4px 0;
+  border-left: 1px solid var(--border-light);
+  border-radius: 0;
 }
 
 /* Inline "Read from here" buttons */

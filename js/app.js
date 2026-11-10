@@ -1000,17 +1000,143 @@ class BibleApp {
   }
 
   // ============================================================
-  // TTS (TEXT-TO-SPEECH) ENGINE
+  // TTS (TEXT-TO-SPEECH) ENGINE — CLOUD MP3 + BACKGROUND PLAYBACK
   // ============================================================
   initTtsEngine() {
-    if (!('speechSynthesis' in window)) return;
-    this.selectBestKoreanVoice();
-    if (window.speechSynthesis.onvoiceschanged !== undefined) {
-      window.speechSynthesis.onvoiceschanged = () => this.selectBestKoreanVoice();
-    }
-    window.addEventListener('beforeunload', () => {
-      window.speechSynthesis.cancel();
+    // 1. Create background keep-alive silent WAV & Dual Audio Decks for gapless background MP3 streaming
+    this.silentWavUrl = this.createSilentWavBlobUrl();
+    this.ttsKeeperAudio = this.createTtsAudioElement();
+    this.ttsKeeperAudio.src = this.silentWavUrl;
+    this.ttsKeeperAudio.loop = true;
+    this.ttsKeeperAudio.volume = 0.01;
+
+    this.ttsDecks = [this.createTtsAudioElement(), this.createTtsAudioElement()];
+    this.activeDeckIdx = 0;
+    this.ttsDecksUnlocked = false;
+    this.ttsUsingLocalFallback = false;
+
+    // 2. Setup Lock-Screen / Bluetooth MediaSession controls
+    this.setupMediaSession();
+
+    // 3. Re-sync scroll position when returning from background / screen-off
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && this.ttsState === 'playing' && this.ttsUnits[this.ttsUnitIndex]) {
+        const el = this.ttsUnits[this.ttsUnitIndex].el;
+        if (el && document.body.contains(el)) {
+          this.scrollTtsUnitIntoView(el);
+        }
+      }
     });
+
+    // 4. Local Web Speech API fallback voice init
+    if ('speechSynthesis' in window) {
+      this.selectBestKoreanVoice();
+      if (window.speechSynthesis.onvoiceschanged !== undefined) {
+        window.speechSynthesis.onvoiceschanged = () => this.selectBestKoreanVoice();
+      }
+    }
+
+    window.addEventListener('beforeunload', () => {
+      this.stopTts();
+    });
+  }
+
+  createTtsAudioElement() {
+    const audio = new Audio();
+    audio.preload = 'auto';
+    audio.playsInline = true;
+    audio.setAttribute('playsinline', '');
+    audio.setAttribute('webkit-playsinline', '');
+    audio.referrerPolicy = 'no-referrer';
+    return audio;
+  }
+
+  /**
+   * Generates a 2-second 8kHz 16-bit mono PCM WAV with 1-LSB signal
+   * so mobile OSes (Android/iOS) keep the background audio session alive
+   * during millisecond transitions between sentence MP3 decks.
+   */
+  createSilentWavBlobUrl() {
+    const sampleRate = 8000;
+    const numSamples = sampleRate * 2;
+    const buffer = new ArrayBuffer(44 + numSamples * 2);
+    const view = new DataView(buffer);
+
+    const writeStr = (offset, str) => {
+      for (let i = 0; i < str.length; i++) {
+        view.setUint8(offset + i, str.charCodeAt(i));
+      }
+    };
+
+    writeStr(0, 'RIFF');
+    view.setUint32(4, 36 + numSamples * 2, true);
+    writeStr(8, 'WAVE');
+    writeStr(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true); // PCM
+    view.setUint16(22, 1, true); // Mono
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    writeStr(36, 'data');
+    view.setUint32(40, numSamples * 2, true);
+
+    for (let i = 0; i < numSamples; i++) {
+      view.setInt16(44 + i * 2, (i % 2 === 0) ? 1 : -1, true);
+    }
+
+    const blob = new Blob([buffer], { type: 'audio/wav' });
+    return URL.createObjectURL(blob);
+  }
+
+  setupMediaSession() {
+    if (!('mediaSession' in navigator)) return;
+    try {
+      navigator.mediaSession.setActionHandler('play', () => this.resumeTts());
+      navigator.mediaSession.setActionHandler('pause', () => this.pauseTts());
+      navigator.mediaSession.setActionHandler('stop', () => this.stopTts());
+      navigator.mediaSession.setActionHandler('previoustrack', () => this.skipTtsUnit(-1));
+      navigator.mediaSession.setActionHandler('nexttrack', () => this.skipTtsUnit(1));
+      navigator.mediaSession.setActionHandler('seekbackward', () => this.skipTtsUnit(-1));
+      navigator.mediaSession.setActionHandler('seekforward', () => this.skipTtsUnit(1));
+    } catch (e) {}
+  }
+
+  updateMediaSessionMetadata() {
+    if (!('mediaSession' in navigator) || !this.ttsPane) return;
+    try {
+      const bookMeta = this.booksSummary.find(b => b.id === this.currentBookId);
+      const bookName = bookMeta ? bookMeta.name : '바른성경';
+      const paneLabel = this.ttsPane === 'bible' ? '성경 본문' : (this.ttsPane === 'commentary' ? '강해서' : '설교집');
+      const unit = this.ttsUnits[this.ttsUnitIndex];
+      const subTitle = (this.ttsPane === 'bible' && unit && unit.verseNum)
+        ? `${bookName} ${this.currentChapter}장 ${unit.verseNum}절`
+        : `${bookName} ${this.currentChapter}장 (${paneLabel})`;
+
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: subTitle,
+        artist: `바른성경 통합 뷰어 · ${paneLabel}`,
+        album: `${bookName} ${this.currentChapter}장`
+      });
+      navigator.mediaSession.playbackState = this.ttsState === 'playing' ? 'playing' : 'paused';
+    } catch (e) {}
+  }
+
+  getCloudTtsUrl(text, lang = 'ko') {
+    return `https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=${encodeURIComponent(lang)}&q=${encodeURIComponent(text)}`;
+  }
+
+  getNextTtsPosition(uIdx, cIdx) {
+    if (!this.ttsUnits || uIdx >= this.ttsUnits.length) return null;
+    const unit = this.ttsUnits[uIdx];
+    if (unit && cIdx + 1 < unit.chunks.length) {
+      return { unitIndex: uIdx, chunkIndex: cIdx + 1 };
+    }
+    if (uIdx + 1 < this.ttsUnits.length) {
+      return { unitIndex: uIdx + 1, chunkIndex: 0 };
+    }
+    return null;
   }
 
   selectBestKoreanVoice() {
@@ -1046,36 +1172,46 @@ class BibleApp {
       .trim();
   }
 
-  splitIntoSentenceChunks(text, maxLen = 170) {
+  splitIntoSentenceChunks(text, maxLen = 165) {
     const cleaned = this.cleanTextForTts(text);
     if (!cleaned) return [];
     if (cleaned.length <= maxLen) return [cleaned];
 
-    const parts = cleaned.split(/(?<=[.?!다요죠음함임])\s+/);
+    const parts = cleaned.split(/(?<=[.?!。]|다\.|요\.|죠\.|음\.|함\.)\s+/);
     const chunks = [];
     let current = '';
 
     for (const part of parts) {
-      if (!part) continue;
-      if ((current + ' ' + part).trim().length <= maxLen) {
-        current = (current + ' ' + part).trim();
+      const s = part ? part.trim() : '';
+      if (!s) continue;
+      if ((current ? current.length + 1 + s.length : s.length) <= maxLen) {
+        current = current ? `${current} ${s}` : s;
       } else {
-        if (current) chunks.push(current);
-        if (part.length <= maxLen) {
-          current = part;
+        if (current) {
+          chunks.push(current);
+          current = '';
+        }
+        if (s.length <= maxLen) {
+          current = s;
         } else {
-          // Hard split very long single clauses by comma or length
-          const subParts = part.split(/(?<=,)\s*/);
-          let subCurrent = '';
-          for (const sp of subParts) {
-            if ((subCurrent + ' ' + sp).trim().length <= maxLen) {
-              subCurrent = (subCurrent + ' ' + sp).trim();
+          const words = s.split(/\s+/);
+          let temp = '';
+          for (const word of words) {
+            if ((temp ? temp.length + 1 + word.length : word.length) <= maxLen) {
+              temp = temp ? `${temp} ${word}` : word;
             } else {
-              if (subCurrent) chunks.push(subCurrent);
-              subCurrent = sp;
+              if (temp) chunks.push(temp);
+              if (word.length > maxLen) {
+                for (let pos = 0; pos < word.length; pos += maxLen) {
+                  chunks.push(word.substring(pos, pos + maxLen));
+                }
+                temp = '';
+              } else {
+                temp = word;
+              }
             }
           }
-          current = subCurrent;
+          if (temp) current = temp;
         }
       }
     }
@@ -1121,11 +1257,6 @@ class BibleApp {
   }
 
   startTts(paneName, startEl = null) {
-    if (!('speechSynthesis' in window)) {
-      this.showToast('이 브라우저는 음성 읽기(TTS) 기능을 지원하지 않습니다.');
-      return;
-    }
-
     this.stopTts();
 
     const units = this.buildTtsQueue(paneName);
@@ -1161,9 +1292,56 @@ class BibleApp {
     this.ttsUnitIndex = startIndex;
     this.ttsChunkIndex = 0;
     this.ttsState = 'playing';
+    this.ttsUsingLocalFallback = false;
+
+    // Start background keep-alive audio loop inside user gesture
+    if (this.ttsKeeperAudio) {
+      this.ttsKeeperAudio.play().catch(() => {});
+    }
+
+    // Unlock secondary deck inside user gesture on first run so mobile OS allows background deck swaps
+    if (!this.ttsDecksUnlocked && this.ttsDecks && this.ttsDecks[1]) {
+      this.ttsDecksUnlocked = true;
+      const deckB = this.ttsDecks[1 - this.activeDeckIdx];
+      deckB.src = this.silentWavUrl;
+      deckB.dataset.loadedUrl = '';
+      deckB.volume = 0.01;
+      const p = deckB.play();
+      if (p && p.then) {
+        p.then(() => {
+          deckB.pause();
+          deckB.volume = 1.0;
+          this.preloadNextChunk();
+        }).catch(() => {
+          deckB.volume = 1.0;
+          this.preloadNextChunk();
+        });
+      }
+    }
 
     this.updateTtsControlUI();
     this.speakCurrentChunk();
+  }
+
+  preloadNextChunk() {
+    if (this.ttsState !== 'playing' || !this.ttsDecks) return;
+    const nextPos = this.getNextTtsPosition(this.ttsUnitIndex, this.ttsChunkIndex);
+    if (!nextPos) return;
+
+    const nextUnit = this.ttsUnits[nextPos.unitIndex];
+    if (!nextUnit) return;
+    const nextText = nextUnit.chunks[nextPos.chunkIndex];
+    if (!nextText) return;
+
+    const nextUrl = this.getCloudTtsUrl(nextText, 'ko');
+    const nextDeck = this.ttsDecks[1 - this.activeDeckIdx];
+    if (nextDeck && nextDeck.dataset.loadedUrl !== nextUrl) {
+      nextDeck.src = nextUrl;
+      nextDeck.dataset.loadedUrl = nextUrl;
+      nextDeck.playbackRate = this.ttsRate;
+      nextDeck.defaultPlaybackRate = this.ttsRate;
+      nextDeck.load();
+    }
   }
 
   speakCurrentChunk() {
@@ -1181,23 +1359,32 @@ class BibleApp {
       return;
     }
 
-    // Highlight current DOM unit & scroll smoothly if needed
+    // Highlight current DOM unit & scroll smoothly if visible
     document.querySelectorAll('.tts-reading').forEach(el => {
       if (el !== unit.el) el.classList.remove('tts-reading');
     });
     unit.el.classList.add('tts-reading');
 
     if (this.ttsChunkIndex === 0) {
-      this.scrollTtsUnitIntoView(unit.el);
-      if (this.ttsPane === 'bible' && unit.verseNum) {
-        this.selectVerse(unit.verseNum, true, 'bible');
+      if (!document.hidden) {
+        this.scrollTtsUnitIntoView(unit.el);
       }
+      if (this.ttsPane === 'bible' && unit.verseNum) {
+        this.selectVerse(unit.verseNum, !document.hidden, 'bible');
+      }
+      this.updateMediaSessionMetadata();
     }
 
     const chunkText = unit.chunks[this.ttsChunkIndex];
     if (!chunkText) {
-      this.ttsUnitIndex++;
-      this.ttsChunkIndex = 0;
+      const nextPos = this.getNextTtsPosition(this.ttsUnitIndex, this.ttsChunkIndex);
+      if (!nextPos) {
+        this.stopTts();
+        this.showToast('음성 읽기가 완료되었습니다.');
+        return;
+      }
+      this.ttsUnitIndex = nextPos.unitIndex;
+      this.ttsChunkIndex = nextPos.chunkIndex;
       this.speakCurrentChunk();
       return;
     }
@@ -1205,38 +1392,110 @@ class BibleApp {
     this.ttsSessionId++;
     const sessionId = this.ttsSessionId;
 
-    window.speechSynthesis.cancel();
-
-    const utter = new SpeechSynthesisUtterance(chunkText);
-    utter.lang = 'ko-KR';
-    utter.rate = this.ttsRate;
-    utter.pitch = 1.0;
-
-    if (!this.ttsVoice) {
-      this.selectBestKoreanVoice();
-    }
-    if (this.ttsVoice) {
-      utter.voice = this.ttsVoice;
+    // Play via Google Cloud TTS MP3 Dual-Deck Engine
+    const targetUrl = this.getCloudTtsUrl(chunkText, 'ko');
+    const deck = this.ttsDecks[this.activeDeckIdx];
+    const otherDeck = this.ttsDecks[1 - this.activeDeckIdx];
+    if (otherDeck) {
+      otherDeck.onended = null;
+      otherDeck.onerror = null;
+      try { otherDeck.pause(); } catch (e) {}
     }
 
-    const advanceNext = () => {
+    if (deck.dataset.loadedUrl !== targetUrl) {
+      deck.src = targetUrl;
+      deck.dataset.loadedUrl = targetUrl;
+    }
+    deck.volume = 1.0;
+    deck.playbackRate = this.ttsRate;
+    deck.defaultPlaybackRate = this.ttsRate;
+
+    const advanceToNextChunk = () => {
       if (sessionId !== this.ttsSessionId || this.ttsState !== 'playing') return;
-      this.ttsChunkIndex++;
-      if (this.ttsChunkIndex >= unit.chunks.length) {
-        this.ttsUnitIndex++;
-        this.ttsChunkIndex = 0;
+      const nextPos = this.getNextTtsPosition(this.ttsUnitIndex, this.ttsChunkIndex);
+      if (!nextPos) {
+        this.stopTts();
+        this.showToast('음성 읽기가 완료되었습니다.');
+        return;
       }
+      this.ttsUnitIndex = nextPos.unitIndex;
+      this.ttsChunkIndex = nextPos.chunkIndex;
+      this.activeDeckIdx = 1 - this.activeDeckIdx;
       this.speakCurrentChunk();
     };
 
-    utter.onend = advanceNext;
+    deck.onended = advanceToNextChunk;
+    deck.onerror = () => {
+      if (sessionId !== this.ttsSessionId || this.ttsState !== 'playing') return;
+      // Offline fallback to local Web Speech API
+      this.speakCurrentChunkLocalFallback(sessionId, chunkText, advanceToNextChunk);
+    };
+
+    const playPromise = deck.play();
+    if (playPromise && playPromise.catch) {
+      playPromise.catch(() => {
+        if (sessionId !== this.ttsSessionId || this.ttsState !== 'playing') return;
+        this.speakCurrentChunkLocalFallback(sessionId, chunkText, advanceToNextChunk);
+      });
+    }
+
+    // Pre-buffer the next sentence chunk into the inactive deck immediately
+    if (this.ttsDecksUnlocked) {
+      this.preloadNextChunk();
+    }
+  }
+
+  speakCurrentChunkLocalFallback(sessionId, chunkText, advanceCallback) {
+    if (!('speechSynthesis' in window)) {
+      if (advanceCallback) advanceCallback();
+      return;
+    }
+    this.ttsUsingLocalFallback = true;
+    const unit = this.ttsUnits[this.ttsUnitIndex];
+    const text = chunkText || (unit && unit.chunks[this.ttsChunkIndex]) || '';
+    if (!text) {
+      if (advanceCallback) advanceCallback();
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = 'ko-KR';
+    utter.rate = Math.min(2.0, Math.max(0.5, this.ttsRate));
+    utter.pitch = 1.0;
+    if (!this.ttsVoice) this.selectBestKoreanVoice();
+    if (this.ttsVoice) utter.voice = this.ttsVoice;
+
+    const nextFn = advanceCallback || (() => {
+      if (sessionId !== this.ttsSessionId || this.ttsState !== 'playing') return;
+      const nextPos = this.getNextTtsPosition(this.ttsUnitIndex, this.ttsChunkIndex);
+      if (!nextPos) {
+        this.stopTts();
+        this.showToast('음성 읽기가 완료되었습니다.');
+        return;
+      }
+      this.ttsUnitIndex = nextPos.unitIndex;
+      this.ttsChunkIndex = nextPos.chunkIndex;
+      this.speakCurrentChunk();
+    });
+
+    utter.onend = nextFn;
     utter.onerror = (e) => {
       if (sessionId !== this.ttsSessionId || this.ttsState !== 'playing') return;
       if (e.error === 'canceled' || e.error === 'interrupted') return;
-      advanceNext();
+      nextFn();
     };
-
     window.speechSynthesis.speak(utter);
+  }
+
+  skipTtsUnit(delta) {
+    if (!this.ttsPane || !this.ttsUnits.length) return;
+    const targetIdx = Math.max(0, Math.min(this.ttsUnits.length - 1, this.ttsUnitIndex + delta));
+    this.ttsUnitIndex = targetIdx;
+    this.ttsChunkIndex = 0;
+    this.ttsState = 'playing';
+    this.updateTtsControlUI();
+    this.speakCurrentChunk();
   }
 
   scrollTtsUnitIntoView(el) {
@@ -1258,44 +1517,98 @@ class BibleApp {
   pauseTts() {
     if (this.ttsState !== 'playing') return;
     this.ttsSessionId++;
+    if (this.ttsDecks) {
+      this.ttsDecks.forEach(d => {
+        try { d.pause(); } catch (e) {}
+      });
+    }
+    if (this.ttsKeeperAudio) {
+      try { this.ttsKeeperAudio.pause(); } catch (e) {}
+    }
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
     this.ttsState = 'paused';
+    this.updateMediaSessionMetadata();
     this.updateTtsControlUI();
   }
 
   resumeTts() {
     if (this.ttsState !== 'paused' || !this.ttsPane) return;
     this.ttsState = 'playing';
+    if (this.ttsKeeperAudio) {
+      this.ttsKeeperAudio.play().catch(() => {});
+    }
+    this.updateMediaSessionMetadata();
     this.updateTtsControlUI();
-    this.speakCurrentChunk();
+
+    const activeDeck = this.ttsDecks && this.ttsDecks[this.activeDeckIdx];
+    if (!this.ttsUsingLocalFallback && activeDeck && activeDeck.src && activeDeck.currentTime > 0 && !activeDeck.ended) {
+      activeDeck.playbackRate = this.ttsRate;
+      activeDeck.play().catch(() => this.speakCurrentChunk());
+    } else {
+      this.speakCurrentChunk();
+    }
   }
 
   stopTts() {
     this.ttsSessionId++;
+    if (this.ttsDecks) {
+      this.ttsDecks.forEach(d => {
+        d.onended = null;
+        d.onerror = null;
+        try { d.pause(); } catch (e) {}
+      });
+    }
+    if (this.ttsKeeperAudio) {
+      try { this.ttsKeeperAudio.pause(); } catch (e) {}
+    }
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
+    }
+    if ('mediaSession' in navigator) {
+      try { navigator.mediaSession.playbackState = 'none'; } catch (e) {}
     }
     this.ttsState = 'idle';
     this.ttsPane = null;
     this.ttsUnits = [];
     this.ttsUnitIndex = 0;
     this.ttsChunkIndex = 0;
+    this.ttsUsingLocalFallback = false;
 
     document.querySelectorAll('.tts-reading').forEach(el => el.classList.remove('tts-reading'));
     this.updateTtsControlUI();
   }
 
-  cycleTtsRate() {
-    const idx = this.ttsRates.indexOf(this.ttsRate);
-    this.ttsRate = this.ttsRates[(idx + 1) % this.ttsRates.length];
-    localStorage.setItem('bible_tts_rate', this.ttsRate);
+  setTtsRate(val) {
+    let num = Math.round(parseFloat(val) * 10) / 10;
+    if (isNaN(num)) num = 1.0;
+    num = Math.max(0.5, Math.min(3.0, num));
+    this.ttsRate = num;
+    localStorage.setItem('bible_tts_rate', String(num));
+
+    if (this.ttsDecks) {
+      this.ttsDecks.forEach(d => {
+        d.playbackRate = num;
+        d.defaultPlaybackRate = num;
+      });
+    }
+
     this.updateTtsControlUI();
 
-    if (this.ttsState === 'playing') {
-      this.speakCurrentChunk();
+    if (this.ttsState === 'playing' && this.ttsUsingLocalFallback) {
+      this.speakCurrentChunkLocalFallback(this.ttsSessionId);
     }
+  }
+
+  adjustTtsRate(delta) {
+    this.setTtsRate(this.ttsRate + delta);
+  }
+
+  cycleTtsRate() {
+    const presets = [1.0, 1.2, 1.5, 2.0];
+    const next = presets.find(p => p > this.ttsRate + 0.01) || presets[0];
+    this.setTtsRate(next);
   }
 
   updateTtsControlUI() {
@@ -1307,6 +1620,7 @@ class BibleApp {
       const btnPlay = group.querySelector('.tts-btn-play');
       const btnStop = group.querySelector('.tts-btn-stop');
       const btnRate = group.querySelector('.tts-btn-rate');
+      const stepBtns = group.querySelectorAll('.tts-btn-rate-step');
 
       if (btnRate) btnRate.textContent = rateLabel;
 
@@ -1323,11 +1637,13 @@ class BibleApp {
         }
         if (btnStop) btnStop.style.display = 'inline-flex';
         if (btnRate) btnRate.style.display = 'inline-flex';
+        stepBtns.forEach(b => { b.style.display = 'inline-flex'; });
       } else {
         btnPlay.textContent = '🔊';
         btnPlay.title = '음성으로 듣기 (선택한 위치 또는 처음부터)';
         if (btnStop) btnStop.style.display = 'none';
         if (btnRate) btnRate.style.display = 'none';
+        stepBtns.forEach(b => { b.style.display = 'none'; });
       }
     });
   }
@@ -1375,6 +1691,10 @@ class BibleApp {
           }
         } else if (action === 'stop') {
           this.stopTts();
+        } else if (action === 'rate-down') {
+          this.adjustTtsRate(-0.1);
+        } else if (action === 'rate-up') {
+          this.adjustTtsRate(0.1);
         } else if (action === 'rate') {
           this.cycleTtsRate();
         }
